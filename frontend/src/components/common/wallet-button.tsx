@@ -49,14 +49,14 @@ export default function WalletButton() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>我的錢包</DropdownMenuLabel>
+        <DropdownMenuLabel>My Wallet</DropdownMenuLabel>
         <DropdownMenuItem disabled className="flex justify-between">
           <span>$SUI</span>
           <span>
             {balance.data?.toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
-            }) ?? "載入中..."}{" "}
+            }) ?? "Loading..."}{" "}
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -65,7 +65,7 @@ export default function WalletButton() {
           onClick={() => disconnect()}
         >
           <LogOut className="mr-2 h-4 w-4" />
-          斷開連接
+          Disconnect
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

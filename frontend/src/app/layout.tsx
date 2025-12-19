@@ -1,11 +1,13 @@
 import { Outlet } from "react-router-dom";
 import { WalletButton } from "@/components/common/wallet-button";
+import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 
 export function AppLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="flex justify-between items-center p-4 border-b bg-white">
-        <span className="text-xl font-bold">SuiStream</span>
+        <Link to="/">SuiStream</Link>
         <WalletButton />
       </header>
 
@@ -16,7 +18,14 @@ export function AppLayout() {
       </main>
 
       <footer className="border-t p-4 text-sm text-gray-500 text-center">
-        SuiStream
+        <Button variant="link">
+          <a
+            href="https://github.com/ndhu-blockchain/SuiStream"
+            target="_blank"
+          >
+            GitHub Repository
+          </a>
+        </Button>
       </footer>
     </div>
   );
