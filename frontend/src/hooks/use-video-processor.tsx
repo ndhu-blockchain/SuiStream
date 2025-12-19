@@ -5,7 +5,8 @@ export function useVideoProcessor() {
   async function processVideo(
     file: File,
     previewSegments = 1,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    signal?: AbortSignal
   ) {
     const tsFiles = await cutVideoToTS(file, 10);
     const key = generateAESKey();
@@ -14,6 +15,10 @@ export function useVideoProcessor() {
 
     const processedFiles = [];
     for (let idx = 0; idx < tsFiles.length; idx++) {
+      if (signal?.aborted) {
+        throw new Error("Video processing cancelled");
+      }
+
       const data = tsFiles[idx];
       let processedData: Uint8Array;
 
