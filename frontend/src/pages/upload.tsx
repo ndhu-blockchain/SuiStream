@@ -3,6 +3,7 @@ import { UploadButton } from "@/components/common/upload-button";
 import { useVideoProcessor } from "@/hooks/use-video-processor";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { VIDEO_PREVIEW_SEGMENTS } from "@/lib/strategy";
 
 export default function Upload() {
   const [processing, setProcessing] = useState(false);
@@ -17,8 +18,7 @@ export default function Upload() {
     try {
       const res = await processVideo(
         file,
-        1,
-        undefined,
+        VIDEO_PREVIEW_SEGMENTS,
         abortControllerRef.current.signal
       );
       setResult(res);

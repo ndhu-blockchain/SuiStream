@@ -1,17 +1,16 @@
 import { cutVideoToTS } from "@/lib/ffmpeg";
 import { generateAESKey, encryptAES128ToBase64 } from "@/lib/aes";
+import { VIDEO_TIME_INTERVAL } from "@/lib/strategy";
 
 export function useVideoProcessor() {
   async function processVideo(
     file: File,
-    previewSegments = 1,
-    onProgress?: (progress: number) => void,
+    previewSegments: number,
     signal?: AbortSignal
   ) {
-    const tsFiles = await cutVideoToTS(file, 10);
+    const tsFiles = await cutVideoToTS(file, VIDEO_TIME_INTERVAL);
     const key = generateAESKey();
     const iv = new Uint8Array(16);
-    const totalFiles = tsFiles.length;
 
     const processedFiles = [];
     for (let idx = 0; idx < tsFiles.length; idx++) {
@@ -38,7 +37,6 @@ export function useVideoProcessor() {
       }
 
       processedFiles.push(processedData);
-      onProgress?.(((idx + 1) / totalFiles) * 100);
     }
 
     const totalLength = processedFiles.reduce((acc, f) => acc + f.length, 0);
@@ -52,7 +50,7 @@ export function useVideoProcessor() {
     let m3u8 = "#EXTM3U\n#EXT-X-VERSION:3\n";
     offset = 0;
     for (const f of processedFiles) {
-      m3u8 += `#EXTINF:10.0,\n#EXT-X-BYTERANGE:${f.length}@${offset}\nvideo.bin\n`;
+      m3u8 += `#EXTINF:${VIDEO_TIME_INTERVAL}.0,\n#EXT-X-BYTERANGE:${f.length}@${offset}\nvideo.bin\n`;
       offset += f.length;
     }
     m3u8 += "#EXT-X-ENDLIST";

@@ -33,7 +33,7 @@ export async function writeInput(file: File, name = "input.mp4") {
 
 export async function cutVideoToTS(
   file: File,
-  segmentDuration = 10
+  segmentDuration: number
 ): Promise<Uint8Array[]> {
   const ff = await getFFmpeg();
   const inputName = await writeInput(file);
