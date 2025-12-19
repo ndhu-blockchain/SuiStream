@@ -3,7 +3,19 @@ import { UploadButton } from "@/components/common/upload-button";
 import { useVideoProcessor } from "@/hooks/use-video-processor";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { VIDEO_PREVIEW_SEGMENTS } from "@/lib/strategy";
+
+// 下載 helper 函式
+function downloadFile(data: BlobPart, filename: string, mimeType: string) {
+  const blob = new Blob([data], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export default function Upload() {
   const [processing, setProcessing] = useState(false);
@@ -18,23 +30,20 @@ export default function Upload() {
     try {
       const res = await processVideo(
         file,
-        VIDEO_PREVIEW_SEGMENTS,
         abortControllerRef.current.signal
       );
       setResult(res);
 
-      // Auto-download .bin file
-      const blob = new Blob([res.videoBin], {
-        type: "application/octet-stream",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "video.bin";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // 自動下載三個檔案
+      // 1. video.bin (二進位影片檔)
+      downloadFile(res.videoBin, "video.bin", "application/octet-stream");
+      
+      // 2. video.m3u8 (播放清單)
+      downloadFile(res.m3u8, "video.m3u8", "text/plain");
+
+      // 3. video.key (加密金鑰)
+      downloadFile(res.key, "video.key", "application/octet-stream");
+
     } catch (error) {
       if ((error as Error).message !== "Video processing cancelled") {
         console.error("Error processing video:", error);
@@ -76,10 +85,14 @@ export default function Upload() {
           <p className="text-lg font-semibold text-green-600">
             Video processed successfully!
           </p>
-          <p className="text-sm text-gray-600">
-            video.bin size: {(result.videoBin.length / 1024 / 1024).toFixed(2)}{" "}
-            MB
-          </p>
+          <div className="text-sm text-gray-600 text-center">
+            <p>Files downloaded:</p>
+            <ul className="list-disc list-inside">
+              <li>video.bin ({(result.videoBin.length / 1024 / 1024).toFixed(2)} MB)</li>
+              <li>video.m3u8</li>
+              <li>video.key</li>
+            </ul>
+          </div>
           <textarea
             className="w-full h-40 p-2 border rounded"
             value={result.m3u8}
