@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, LogOut, Wallet } from "lucide-react";
-import { useSuiBalance } from "@/hooks/useSuiBalance";
+import { useSuiBalance } from "@/hooks/use-sui-balance";
 
 const formatAddress = (address: string) =>
   `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -33,7 +33,7 @@ export default function WalletButton() {
         trigger={
           <Button onClick={() => setOpen(true)}>
             <Wallet className="mr-2 h-4 w-4" />
-            連接錢包
+            Connect Wallet
           </Button>
         }
       />
