@@ -13,10 +13,11 @@ async function reEncodingSplitVideo(
   splitDuration: number,
   setProgress: (progress: number) => void,
   setStatusText: (text: string) => void
-): Promise<{ segments: VideoSegment[] }> {
+): Promise<{ segments: VideoSegment[]; coverFile: File }> {
   // 重新編碼並切割為為 h264
   // 切割為 splitDuration 秒一片段之 .ts 檔案
   // 回傳所有片段檔案與m3u8播放清單檔案
+  // 取第一張影片封面作為縮圖
   const inputFileName = "input.mp4";
   const outputPattern = "segment_%03d.ts";
 
@@ -54,6 +55,19 @@ async function reEncodingSplitVideo(
   if (ret !== 0) {
     throw new Error("Video format not supported. Please use H.264/AAC MP4.");
   }
+
+  // 取縮圖
+  console.debug("Generating thumbnail...");
+  setStatusText("Generating thumbnail...");
+  await ffmpegInstance.exec([
+    "-i",
+    inputFileName,
+    "-ss",
+    "00:00:01.000",
+    "-vframes",
+    "1",
+    "cover.png",
+  ]);
 
   console.debug("FFmpeg processing completed.");
 
@@ -122,7 +136,13 @@ async function reEncodingSplitVideo(
 
   console.debug("Temporary files cleaned up.");
 
-  return { segments };
+  const coverData = await ffmpegInstance.readFile("cover.png");
+  const coverFile = new File([coverData as any], "cover.png", {
+    type: "image/png",
+  });
+  ffmpegInstance.deleteFile("cover.png");
+
+  return { segments, coverFile };
 }
 
 async function aesEncryptSegments(
