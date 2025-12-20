@@ -105,6 +105,9 @@ export default function Upload() {
         error: null,
       });
 
+      // 給瀏覽器時間顯示初始狀態
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // 讀取視頻檔案
       const fileData = await file.arrayBuffer();
       const videoBytes = new Uint8Array(fileData);
@@ -140,6 +143,7 @@ export default function Upload() {
       }));
 
       const encryptedSegments: Uint8Array[] = [];
+      let processedCount = 0;
 
       for (let i = 0; i < totalSegments; i++) {
         if (abortControllerRef.current?.signal.aborted) {
@@ -164,13 +168,26 @@ export default function Upload() {
           `Segment ${i} encrypted: ${segmentData.length} -> ${encrypted.length}`
         );
         encryptedSegments.push(encrypted);
+        processedCount++;
 
-        const progress = 30 + (i / totalSegments) * 50;
-        setState((prev) => ({
-          ...prev,
-          progress: Math.round(progress),
-          status: `加密片段 ${i + 1}/${totalSegments}...`,
-        }));
+        // 每處理 2 個片段更新一次進度
+        if (i % 2 === 0 || i === totalSegments - 1) {
+          const progress = 30 + (processedCount / totalSegments) * 50;
+          const roundedProgress = Math.round(progress);
+          console.log(
+            `Progress: ${roundedProgress}% (${i + 1}/${totalSegments})`
+          );
+
+          // 使用同步方式更新狀態，確保立即反映
+          setState((prev) => ({
+            ...prev,
+            progress: roundedProgress,
+            status: `加密片段 ${i + 1}/${totalSegments}...`,
+          }));
+
+          // 給瀏覽器時間刷新 UI
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       }
 
       // 合併所有加密片段
@@ -417,18 +434,25 @@ export default function Upload() {
             </Button>
           </div>
         ) : state.isProcessing ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-center gap-3">
-              <Spinner className="size-6" />
-              <div className="text-sm">
-                <p className="font-medium">{state.status}</p>
-                <p className="text-xs text-muted-foreground">
-                  進度: {state.progress}%
+          <div className="space-y-6">
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-6">
+              <div className="flex items-center justify-center gap-4 mb-4">
+                <Spinner className="size-8 text-blue-600" />
+                <p className="font-semibold text-lg text-blue-900">
+                  {state.status}
                 </p>
               </div>
-            </div>
 
-            <Progress value={state.progress} className="h-2" />
+              <div className="space-y-3">
+                <Progress value={state.progress} className="h-4 bg-blue-100" />
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-2xl text-blue-700">
+                    {state.progress}%
+                  </span>
+                  <span className="text-sm text-blue-600">正在處理中...</span>
+                </div>
+              </div>
+            </div>
 
             <Button
               onClick={handleCancel}
