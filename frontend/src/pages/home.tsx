@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import { Link } from "react-router-dom";
 
-export default function Home() {
+export default function HomePage() {
   const walletConnected = Boolean(useCurrentAccount());
 
   return (
@@ -26,4 +26,4 @@ export default function Home() {
   );
 }
 
-export { Home };
+export { HomePage };

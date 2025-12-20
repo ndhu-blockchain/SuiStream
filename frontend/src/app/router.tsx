@@ -1,16 +1,16 @@
 import { createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "./layout";
-import { Home } from "@/pages/home";
-import { Videos } from "@/pages/videos";
-import { Upload } from "@/pages/upload";
+import { HomePage } from "@/pages/home";
+import { VideosPage } from "@/pages/videos";
+import { UploadPage } from "@/pages/upload";
 
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
-      { path: "/", element: <Home /> },
-      { path: "/videos", element: <Videos /> },
-      { path: "/upload", element: <Upload /> },
+      { path: "/", element: <HomePage /> },
+      { path: "/videos", element: <VideosPage /> },
+      { path: "/upload", element: <UploadPage /> },
     ],
   },
 ]);
