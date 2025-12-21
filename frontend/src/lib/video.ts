@@ -125,7 +125,7 @@ async function reEncodingSplitVideo(
   console.debug("Extracted segments:", segments);
 
   // 清理臨時檔
-  setStatusText("Cleaning up...");
+  // setStatusText("Cleaning up...");
   ffmpegInstance.deleteFile(inputFileName);
   ffmpegInstance.deleteFile("output.m3u8");
   segmentNames.forEach((name) => {
@@ -171,7 +171,13 @@ async function aesEncryptSegments(
   const rawKey = await window.crypto.subtle.exportKey("raw", cryptoKey);
   console.debug("Generated AES-128 key:", new Uint8Array(rawKey));
 
+  let processedCount = 0;
   for (let segment of segments) {
+    processedCount++;
+    setStatusText(`Encrypting segment ${processedCount}/${segments.length}...`);
+    const percentage = 40 + (processedCount / segments.length) * 50;
+    setProgress(Math.round(percentage));
+
     // 使用隨機 IV
     const iv = window.crypto.getRandomValues(new Uint8Array(16));
     console.debug(

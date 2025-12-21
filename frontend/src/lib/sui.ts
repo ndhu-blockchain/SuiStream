@@ -113,11 +113,13 @@ export async function uploadVideoAssetsFlow(
   },
   metadata: { title: string; description: string; price: number },
   account: string,
-  signAndExecuteTransaction: any
+  signAndExecuteTransaction: any,
+  onStatusUpdate?: (status: string) => void
 ) {
   const tx = new Transaction();
 
   // --- 0. Seal 加密 ---
+  onStatusUpdate?.("Encrypting AES Key with Seal...");
   console.log("Encrypting AES Key with Seal...");
   const sealId = new Uint8Array(32);
   crypto.getRandomValues(sealId);
@@ -125,6 +127,7 @@ export async function uploadVideoAssetsFlow(
   console.log("Key Encrypted. Size:", encryptedKey.length);
 
   // --- 0.1 上傳所有檔案到 Walrus ---
+  onStatusUpdate?.("Uploading Video to Walrus...");
   console.log("Uploading Assets to Walrus...");
 
   // 1. Upload Video First to get Blob ID
@@ -138,6 +141,7 @@ export async function uploadVideoAssetsFlow(
   const m3u8Bytes = new TextEncoder().encode(modifiedM3u8);
 
   // 3. Upload Others
+  onStatusUpdate?.("Uploading Metadata to Walrus...");
   const tempKeyName = generateMockId("key");
   const tempM3uName = generateMockId("m3u8");
   const tempCovName = generateMockId("cover");
@@ -156,6 +160,7 @@ export async function uploadVideoAssetsFlow(
   });
 
   // --- A. 計算費用 (估算) ---
+  onStatusUpdate?.("Calculating Fees...");
   const EPOCHS = 1; // 測試用：降低 Epochs
   const PRICE_PER_BYTE = 1; // 測試用：降低費率以配合 Mock DEX 流動性
 
@@ -178,6 +183,7 @@ export async function uploadVideoAssetsFlow(
   );
 
   // --- B. 構建 PTB (可程式化交易) ---
+  onStatusUpdate?.("Preparing Transaction...");
 
   // 1. [Split] 從 Gas Coin 切出 SUI
   const [suiForSwap] = tx.splitCoins(tx.gas, [tx.pure.u64(totalSuiNeeded)]);
@@ -212,6 +218,7 @@ export async function uploadVideoAssetsFlow(
   });
 
   // --- C. 執行交易 ---
+  onStatusUpdate?.("Please approve the transaction in your wallet...");
   const result = await signAndExecuteTransaction({
     transaction: tx,
     options: { showEffects: true },

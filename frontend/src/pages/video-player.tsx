@@ -54,6 +54,7 @@ export default function VideoPlayerPage() {
   const currentAccount = useCurrentAccount();
   const [decryptedKey, setDecryptedKey] = useState<Uint8Array | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [statusText, setStatusText] = useState("");
   const [isBuying, setIsBuying] = useState(false);
   const [error, setError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -259,6 +260,7 @@ export default function VideoPlayerPage() {
   const handlePlay = async () => {
     if (!videoObject || !currentAccount) return;
     setIsDecrypting(true);
+    setStatusText("Preparing...");
     setError("");
 
     try {
@@ -269,6 +271,7 @@ export default function VideoPlayerPage() {
       console.log("Seal ID:", sealId);
       console.log("Seal ID (Hex):", toHex(sealId));
 
+      setStatusText("Checking access...");
       // 1. Check for AccessPass
       const accessPasses = await suiClient.getOwnedObjects({
         owner: currentAccount.address,
@@ -290,6 +293,7 @@ export default function VideoPlayerPage() {
         throw new Error("You don't have an Access Pass for this video.");
       }
 
+      setStatusText("Building transaction...");
       // 2. Build Transaction for Authorization
       const tx = new Transaction();
 
@@ -331,6 +335,7 @@ export default function VideoPlayerPage() {
       });
       console.log("TxBytes Hex:", toHex(txBytes));
 
+      setStatusText("Fetching Encrypted Key from Walrus...");
       console.log("Fetching Encrypted Key from Walrus...", keyBlobId);
       // 3. Fetch Encrypted Key
       const response = await fetch(
@@ -339,11 +344,14 @@ export default function VideoPlayerPage() {
       if (!response.ok) throw new Error("Failed to fetch key from Walrus");
       const encryptedKey = new Uint8Array(await response.arrayBuffer());
 
+      setStatusText("Creating Session Key...");
       console.log("Creating Session Key...");
       const signerAdapter = {
         signPersonalMessage: async (message: Uint8Array) => {
+          setStatusText("Please sign the request in your wallet");
           // Seal SDK 傳入的是 Uint8Array (bytes)，而不是物件
           const res = await signPersonalMessage({ message });
+          setStatusText("Verifying signature...");
 
           // 確保回傳的 bytes 是 base64 字串
           return {
@@ -375,6 +383,7 @@ export default function VideoPlayerPage() {
         signer: signerAdapter as any,
       });
 
+      setStatusText("Decrypting with Seal...");
       console.log("Decrypting with Seal...");
       const client = new SealClient({
         suiClient,
@@ -408,6 +417,7 @@ export default function VideoPlayerPage() {
       setError(err.message || "Decryption failed");
     } finally {
       setIsDecrypting(false);
+      setStatusText("");
     }
   };
 
@@ -440,9 +450,9 @@ export default function VideoPlayerPage() {
                 <Button onClick={handlePlay} disabled={isDecrypting}>
                   {isDecrypting ? "Decrypting..." : "Unlock & Play"}
                 </Button>
-                {isDecrypting && (
+                {isDecrypting && statusText && (
                   <p className="text-yellow-400 text-sm animate-pulse">
-                    Please sign the request in your wallet
+                    {statusText}
                   </p>
                 )}
               </div>

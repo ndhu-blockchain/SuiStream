@@ -56,6 +56,7 @@ export default function UploadPage() {
   const [videoTitle, setVideoTitle] = useState<string>("");
   const [videoDescription, setVideoDescription] = useState<string>("");
   const [videoPrice, setVideoPrice] = useState<number>(0);
+  const [uploadStatusText, setUploadStatusText] = useState<string>("");
 
   const resetStates = () => {
     setPageStatus("waiting");
@@ -71,6 +72,7 @@ export default function UploadPage() {
     setVideoTitle("");
     setVideoDescription("");
     setVideoPrice(0);
+    setUploadStatusText("");
   };
 
   const videoProcess = async (videoFile: File) => {
@@ -86,6 +88,7 @@ export default function UploadPage() {
     setVideoProcessingProgress(5);
     setVideoProcessingText("Converter Ready");
     // 重新編碼並切割為 特定秒一片段之 .ts 檔案
+    setVideoProcessingText("Transcoding & Splitting Video...");
     const { segments, coverFile } = await reEncodingSplitVideo(
       ffmpeg,
       videoFile,
@@ -103,6 +106,7 @@ export default function UploadPage() {
     setVideoProcessingText("Video processed");
     setVideoCoverFile(coverFile);
     // 產生一 AES-128 加密金鑰逐一加密每個 .ts 檔案
+    setVideoProcessingText("Encrypting Segments...");
     const encryptedData = await aesEncryptSegments(
       segments,
       setVideoProcessingProgress,
@@ -115,9 +119,10 @@ export default function UploadPage() {
     });
     setEncryptedSegments(encryptedData.segments);
     setAesKey(encryptedData.key);
-    setVideoProcessingProgress(70);
+    setVideoProcessingProgress(90);
     setVideoProcessingText("Segments encrypted");
     // 將所有 .ts 片段逐一接合同時紀錄每個片段 ByteRange
+    setVideoProcessingText("Generating M3U8 Playlist...");
     const { m3u8Content, mergedData } = await mergeTSGenerateM3U8(
       encryptedData.segments,
       videoSplitDuration,
@@ -295,7 +300,8 @@ export default function UploadPage() {
                     price: videoPrice * 1_000_000_000, // 轉為 MIST
                   },
                   currentAccount.address,
-                  signAndExecuteTransaction
+                  signAndExecuteTransaction,
+                  (status) => setUploadStatusText(status)
                 );
                 setPageStatus("walrusUploadSuccess");
               } catch (error) {
@@ -329,7 +335,7 @@ export default function UploadPage() {
       {pageStatus === "uploadingWalrus" && (
         <div className="flex flex-col items-center gap-4">
           <h1 className="text-2xl font-bold mb-4">Uploading to Walrus...</h1>
-          <p>Please approve the transaction in your wallet.</p>
+          <p>{uploadStatusText || "Initializing upload..."}</p>
           <Spinner />
         </div>
       )}
