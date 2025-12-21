@@ -15,6 +15,7 @@ public struct Video has key, store {
     title: String,
     description: String,
     ipfs_hash: String,
+    cover_blob_id: String, // 影片封面 Blob ID
     creator: address,
     seal_id: vector<u8>, // Seal 識別 ID (用於加密金鑰)
     key_blob_id: String, // 加密金鑰在 Walrus 上的 Blob ID
@@ -31,6 +32,7 @@ public struct VideoCreated has copy, drop {
     title: String,
     creator: address,
     price: u64,
+    cover_blob_id: String,
 }
 
 public struct VideoPurchased has copy, drop {
@@ -42,6 +44,7 @@ public entry fun create_video(
     title: String,
     description: String,
     ipfs_hash: String,
+    cover_blob_id: String,
     seal_id: vector<u8>,
     key_blob_id: String,
     price: u64,
@@ -54,6 +57,7 @@ public entry fun create_video(
         title: title,
         description: description,
         ipfs_hash: ipfs_hash,
+        cover_blob_id: cover_blob_id,
         creator: ctx.sender(),
         seal_id: seal_id,
         key_blob_id: key_blob_id,
@@ -65,6 +69,7 @@ public entry fun create_video(
         title: video.title,
         creator: video.creator,
         price: video.price,
+        cover_blob_id: video.cover_blob_id,
     });
 
     // 將影片物件設為共享，讓所有人都能看到並購買

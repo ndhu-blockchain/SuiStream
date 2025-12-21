@@ -55,6 +55,9 @@ export default function VideosPage() {
           const price = parsedJson.price
             ? Number(parsedJson.price) / 1_000_000_000
             : 0; // MIST to SUI
+          const coverUrl = parsedJson.cover_blob_id
+            ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${parsedJson.cover_blob_id}`
+            : null;
 
           return (
             <Card key={videoId}>
@@ -65,8 +68,16 @@ export default function VideosPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="aspect-video bg-gray-100 rounded-md flex items-center justify-center mb-4">
-                  <span className="text-gray-400">Thumbnail Placeholder</span>
+                <div className="aspect-video bg-gray-100 rounded-md flex items-center justify-center mb-4 overflow-hidden">
+                  {coverUrl ? (
+                    <img
+                      src={coverUrl}
+                      alt={title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-gray-400">Thumbnail Placeholder</span>
+                  )}
                 </div>
                 <p className="font-bold text-lg">
                   {price > 0 ? `${price} SUI` : "Free"}

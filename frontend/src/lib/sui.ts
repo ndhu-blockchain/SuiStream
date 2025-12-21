@@ -18,7 +18,7 @@ const MOCK_DEX_PACKAGE_ID =
 
 // [Video Platform Package ID] (新的 Package，包含 Seal 支援)
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x368429835bcf33cfa24df151c6cf3afc0278b9e731d1c6140670d0b6aeedb091";
+  "0x7825c610d457f78b2d989d63b993dfd383801577be59931a740d27e17e4949a8";
 
 // [你的 Mock Dex Bank ID] (剛剛存錢進去的那個 Shared Object ID)
 const MOCK_DEX_BANK_ID =
@@ -213,6 +213,7 @@ export async function uploadVideoAssetsFlow(
       tx.pure.string(metadata.title),
       tx.pure.string(metadata.description),
       tx.pure.string(realM3u8BlobId), // 真實 M3U8 ID
+      tx.pure.string(realCoverBlobId), // 真實 Cover ID
       tx.pure.vector("u8", sealId), // 傳入 Seal ID
       tx.pure.string(realKeyBlobId), // 傳入真實的 Key Blob ID
       tx.pure.u64(metadata.price), // 傳入價格
