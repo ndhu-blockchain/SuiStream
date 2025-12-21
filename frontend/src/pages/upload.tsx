@@ -278,6 +278,7 @@ export default function UploadPage() {
                     video: mergedVideo,
                     m3u8: m3u8Content,
                     cover: videoCoverFile,
+                    aesKey: aesKey!,
                   },
                   {
                     title: videoTitle,

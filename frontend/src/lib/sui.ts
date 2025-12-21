@@ -3,6 +3,8 @@ const MIST_PER_SUI = 1_000_000_000;
 
 import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
+import { SealClient } from "@mysten/seal";
+import { fromHex, toHex } from "@mysten/sui/utils";
 
 // =================================================================
 // 1. 設定區 (根據你剛剛的部署結果填入)
@@ -10,9 +12,13 @@ import { Transaction } from "@mysten/sui/transactions";
 
 const NETWORK = "testnet";
 
-// [你的合約 Package ID]
-const SUI_STREAM_PACKAGE_ID =
+// [Mock DEX Package ID] (舊的 Package，用於 Swap)
+const MOCK_DEX_PACKAGE_ID =
   "0xe13e305cea49c187ad85cb954deab95149fd33b56db31dc34524525bb7210cb9";
+
+// [Video Platform Package ID] (新的 Package，包含 Seal 支援)
+const VIDEO_PLATFORM_PACKAGE_ID =
+  "0x940c0056896a5932493163b153233b226d865a90cc893ba83f83f8a30b3a008a";
 
 // [你的 Mock Dex Bank ID] (剛剛存錢進去的那個 Shared Object ID)
 const MOCK_DEX_BANK_ID =
@@ -48,7 +54,51 @@ async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
   if (!response.ok) {
     throw new Error(`Failed to upload blob: ${response.statusText}`);
   }
-  return response;
+  // 解析回傳的 JSON 取得真實的 Blob ID
+  const data = await response.json();
+  let realBlobId = "";
+  if (
+    data.newlyCreated &&
+    data.newlyCreated.blobObject &&
+    data.newlyCreated.blobObject.blobId
+  ) {
+    realBlobId = data.newlyCreated.blobObject.blobId;
+  } else if (data.alreadyCertified && data.alreadyCertified.blobId) {
+    realBlobId = data.alreadyCertified.blobId;
+  }
+
+  return realBlobId || blobId; // 如果解析失敗，回傳原本的 (雖然可能是錯的)
+}
+
+/**
+ * 使用 Seal 加密 AES Key
+ */
+async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
+  const client = new SealClient({
+    suiClient,
+    serverConfigs: [
+      {
+        objectId:
+          "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75",
+        weight: 1,
+      },
+      {
+        objectId:
+          "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8",
+        weight: 1,
+      },
+    ],
+    verifyKeyServers: false,
+  });
+
+  const { encryptedObject } = await client.encrypt({
+    threshold: 1, // 測試網使用 1 即可
+    packageId: VIDEO_PLATFORM_PACKAGE_ID,
+    id: toHex(sealId),
+    data: aesKey,
+  });
+
+  return encryptedObject;
 }
 
 /**
@@ -64,12 +114,31 @@ const generateMockId = (prefix: string) => {
 // =================================================================
 
 export async function uploadVideoAssetsFlow(
-  assets: { video: Uint8Array; m3u8: string; cover: File },
+  assets: {
+    video: Uint8Array;
+    m3u8: string;
+    cover: File;
+    aesKey: Uint8Array;
+  },
   metadata: { title: string; description: string },
   account: string,
   signAndExecuteTransaction: any
 ) {
   const tx = new Transaction();
+
+  // --- 0. Seal 加密 ---
+  console.log("Encrypting AES Key with Seal...");
+  const sealId = new Uint8Array(32);
+  crypto.getRandomValues(sealId);
+  const encryptedKey = await encryptKeyWithSeal(assets.aesKey, sealId);
+  console.log("Key Encrypted. Size:", encryptedKey.length);
+
+  // --- 0.1 上傳加密後的 Key 到 Walrus (優先獲取真實 ID) ---
+  console.log("Uploading Encrypted Key to Walrus...");
+  // 使用一個臨時的 Mock ID 作為檔名，但我們會拿到真實的 Blob ID
+  const tempKeyName = generateMockId("key");
+  const realKeyBlobId = await uploadToWalrus(encryptedKey, tempKeyName);
+  console.log("Real Key Blob ID:", realKeyBlobId);
 
   // --- A. 計算費用 (前端估算) ---
   const EPOCHS = 1; // 測試用：降低 Epochs
@@ -78,7 +147,8 @@ export async function uploadVideoAssetsFlow(
   const sizeVideo = assets.video.length;
   const sizeM3u8 = new TextEncoder().encode(assets.m3u8).length;
   const sizeCover = assets.cover.size;
-  const totalSize = sizeVideo + sizeM3u8 + sizeCover;
+  const sizeKey = encryptedKey.length;
+  const totalSize = sizeVideo + sizeM3u8 + sizeCover + sizeKey;
 
   const totalWalNeeded = totalSize * EPOCHS * PRICE_PER_BYTE;
 
@@ -98,9 +168,9 @@ export async function uploadVideoAssetsFlow(
   const [suiForSwap] = tx.splitCoins(tx.gas, [tx.pure.u64(totalSuiNeeded)]);
 
   // 2. [Swap] 呼叫 Mock DEX (SUI -> WAL)
-  // 這會回傳一個 Coin<WAL> 物件
+  // 注意：使用舊的 Mock DEX Package
   const walCoin = tx.moveCall({
-    target: `${SUI_STREAM_PACKAGE_ID}::mock_dex::swap_sui_for_token`,
+    target: `${MOCK_DEX_PACKAGE_ID}::mock_dex::swap_sui_for_token`,
     typeArguments: [WAL_COIN_TYPE],
     arguments: [
       tx.object(MOCK_DEX_BANK_ID), // 銀行物件
@@ -109,24 +179,22 @@ export async function uploadVideoAssetsFlow(
   });
 
   // 3. [Pay] 支付儲存費
-  // 由於我們是 Testnet 模擬環境，這裡我們直接將換到的 WAL 轉給使用者自己
-  // (這證明了 Swap 成功，且錢包裡收到了 WAL)
-  // 在主網時，這裡會換成 Walrus System 的 buy_blob 呼叫
   tx.transferObjects([walCoin], account);
 
   // 4. [Metadata] 呼叫 SuiStream 合約記錄影片資訊
-  // 生成模擬的 Blob IDs
   const vidId = generateMockId("video");
   const m3uId = generateMockId("m3u8");
   const covId = generateMockId("cover");
 
-  // 將 M3U8 ID 寫入鏈上作為入口
+  // 注意：這裡我們傳入真實的 Key Blob ID
   tx.moveCall({
-    target: `${SUI_STREAM_PACKAGE_ID}::video_platform::create_video`,
+    target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::create_video`,
     arguments: [
       tx.pure.string(metadata.title),
       tx.pure.string(metadata.description),
       tx.pure.string(m3uId),
+      tx.pure.vector("u8", sealId), // 傳入 Seal ID
+      tx.pure.string(realKeyBlobId), // 傳入真實的 Key Blob ID
     ],
   });
 
@@ -139,24 +207,16 @@ export async function uploadVideoAssetsFlow(
 
   console.log("Tx Digest:", result.digest);
 
-  // --- D. 上傳實體檔案 ---
-  console.log("Uploading assets to Walrus...");
+  // --- D. 上傳其餘實體檔案 ---
+  console.log("Uploading remaining assets to Walrus...");
 
-  // 修正：將 m3u8 字串轉為 Uint8Array
   const m3u8Bytes = new TextEncoder().encode(assets.m3u8);
-
-  // Walrus 上傳後會回傳 Blob ID，我們這裡先上傳，然後把回傳的 Blob ID 拿來用
-  // 但因為我們已經在合約呼叫時先用了 generateMockId，這在真實流程中是不對的。
-  // 真實流程應該是：
-  // 1. 上傳到 Walrus -> 拿到 Blob ID
-  // 2. 呼叫合約 -> 把 Blob ID 寫入鏈上
-  //
-  // 但為了配合目前的 Mock 流程，我們這裡先簡單修正 uploadToWalrus 讓它能通
 
   await Promise.all([
     uploadToWalrus(assets.video, vidId),
     uploadToWalrus(m3u8Bytes, m3uId),
     uploadToWalrus(assets.cover, covId),
+    // Key 已經上傳過了，不用再傳
   ]);
 
   return result;
