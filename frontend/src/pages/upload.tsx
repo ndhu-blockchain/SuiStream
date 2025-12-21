@@ -74,7 +74,7 @@ export default function UploadPage() {
 
   const videoProcess = async (videoFile: File) => {
     setPageStatus("videoProcessing");
-    setUploadStatusText("Loading processor...");
+    setVideoProcessingText("Loading processor...");
     setErrorMessage("");
     // load ffmpeg.wasm
     const { ffmpeg } = await ffmpegInstance().catch((err) => {
