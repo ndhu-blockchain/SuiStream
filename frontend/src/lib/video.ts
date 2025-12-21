@@ -23,6 +23,7 @@ async function reEncodingSplitVideo(
 
   // 寫入輸入影片
   setStatusText("Writing file...");
+  setProgress(5);
   await ffmpegInstance.writeFile(inputFileName, await fetchFile(videoFile));
 
   console.debug("Starting FFmpeg splitting (copy mode)...");
@@ -61,6 +62,7 @@ async function reEncodingSplitVideo(
   // 取縮圖
   console.debug("Generating thumbnail...");
   setStatusText("Generating thumbnail...");
+  setProgress(40);
   await ffmpegInstance.exec([
     "-i",
     inputFileName,
@@ -75,6 +77,7 @@ async function reEncodingSplitVideo(
 
   // 列出虛擬文件系統中的所有檔案
   setStatusText("Reading segments...");
+  setProgress(40);
   try {
     const files = await ffmpegInstance.listDir("/");
     console.debug("Files in FFmpeg virtual filesystem:", files);
@@ -125,7 +128,8 @@ async function reEncodingSplitVideo(
   console.debug("Extracted segments:", segments);
 
   // 清理臨時檔
-  // setStatusText("Cleaning up...");
+  setStatusText("Cleaning up...");
+  setProgress(40);
   ffmpegInstance.deleteFile(inputFileName);
   ffmpegInstance.deleteFile("output.m3u8");
   segmentNames.forEach((name) => {
@@ -217,7 +221,7 @@ async function mergeTSGenerateM3U8(
 ): Promise<{ m3u8Content: string; mergedData: Uint8Array }> {
   // 合併所有 TS 片段並產生對應的 byterange m3u8 播放清單檔案
   setStatusText("Generating m3u8 playlist...");
-  setProgress(80);
+  setProgress(90);
 
   const totalLength = segments.reduce((acc, seg) => acc + seg.data.length, 0);
   const mergedData = new Uint8Array(totalLength);
