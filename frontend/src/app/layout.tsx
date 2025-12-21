@@ -12,7 +12,7 @@ export function AppLayout() {
         <WalletButton />
       </header>
 
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-4 lg:p-8">
         <div className="max-w-2xl mx-auto">
           <Outlet />
         </div>

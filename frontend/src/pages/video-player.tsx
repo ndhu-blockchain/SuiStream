@@ -7,6 +7,9 @@ import {
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect, useRef } from "react";
 import { SealClient, SessionKey } from "@mysten/seal";
 import { suiClient, VIDEO_PLATFORM_PACKAGE_ID, buyVideo } from "@/lib/sui";
@@ -15,6 +18,17 @@ import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
 import Hls from "hls.js";
 import { toast } from "sonner";
+import {
+  Loader2,
+  Lock,
+  Play,
+  AlertCircle,
+  CheckCircle2,
+  User,
+  ShieldCheck,
+  Coins,
+  Film,
+} from "lucide-react";
 
 // 實作一個簡單的 PublicKey Adapter
 class SimplePublicKey extends PublicKey {
@@ -424,8 +438,36 @@ export default function VideoPlayerPage() {
     }
   };
 
-  if (isPending) return <div>Loading video...</div>;
-  if (!videoObject?.data) return <div>Video not found</div>;
+  if (isPending) {
+    return (
+      <div className="container mx-auto max-w-6xl px-4 py-8">
+        <div className="space-y-6">
+          <Skeleton className="aspect-video w-full rounded-xl" />
+          <div className="space-y-4">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-5 w-1/3" />
+            <Separator className="my-4" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!videoObject?.data) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center">
+        <AlertCircle className="h-16 w-16 text-destructive/50" />
+        <h2 className="text-2xl font-bold">Video not found</h2>
+        <p className="text-muted-foreground">
+          The video you are looking for does not exist or has been removed.
+        </p>
+        <Button variant="outline" onClick={() => window.history.back()}>
+          Go Back
+        </Button>
+      </div>
+    );
+  }
 
   const content = videoObject.data.content as any;
   const fields = content.fields;
@@ -440,57 +482,195 @@ export default function VideoPlayerPage() {
   const hasAccess = !!pass || isCreator;
 
   return (
-    <div className="container mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-4">{fields.title}</h1>
-      <p className="text-gray-600 mb-8">{fields.description}</p>
-
-      <div className="aspect-video bg-black rounded-lg flex items-center justify-center relative overflow-hidden">
-        {!decryptedKey ? (
-          <div className="text-center">
-            <p className="text-white mb-4">Content is Encrypted</p>
-            {hasAccess ? (
-              <div className="flex flex-col items-center gap-2">
-                <Button onClick={handlePlay} disabled={isDecrypting}>
-                  {isDecrypting ? "Decrypting..." : "Unlock & Play"}
-                </Button>
-                {isDecrypting && statusText && (
-                  <p className="text-yellow-400 text-sm animate-pulse">
-                    {statusText}
-                  </p>
-                )}
+    <div className="min-h-screen w-full bg-background pb-20">
+      <div className="container mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Player Area */}
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black shadow-2xl ring-1 ring-white/10">
+            {!decryptedKey ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/90 p-6 text-center text-white backdrop-blur-sm">
+                <div className="flex w-full max-w-sm flex-col items-center gap-6 justify-space-between">
+                  {hasAccess ? (
+                    <>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-bold">Content Locked</h3>
+                        <p className="text-zinc-400">
+                          You have access to this video.
+                        </p>
+                      </div>
+                      {/* Status Text Area - Always visible space to prevent layout shift */}
+                      {isDecrypting && statusText && (
+                        <div className="w-full">
+                          <p className="animate-pulse text-sm font-medium text-primary-foreground">
+                            {statusText}
+                          </p>
+                        </div>
+                      )}
+                      {error && (
+                        <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          {error}
+                        </div>
+                      )}
+                      <div className="flex w-full flex-col gap-4">
+                        <Button
+                          size="lg"
+                          onClick={handlePlay}
+                          disabled={isDecrypting}
+                          className="w-full gap-2 text-lg font-semibold"
+                        >
+                          {isDecrypting ? (
+                            <>
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              Decrypting...
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-5 w-5" />
+                              Unlock & Play
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-bold">Premium Content</h3>
+                        <p className="text-zinc-400">
+                          {isFree
+                            ? "This video is free, but requires an access pass."
+                            : "Purchase an access pass to watch this video."}
+                        </p>
+                      </div>
+                      {error && (
+                        <div className="mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          {error}
+                        </div>
+                      )}
+                      <Button
+                        size="lg"
+                        onClick={handleBuy}
+                        disabled={isBuying}
+                        className="w-full gap-2 text-lg font-semibold"
+                        variant={isFree ? "default" : "secondary"}
+                      >
+                        {isBuying ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            Processing...
+                          </>
+                        ) : isFree ? (
+                          "Get Free Access"
+                        ) : (
+                          <>
+                            <Coins className="h-5 w-5" />
+                            Buy for {Number(fields.price) / 1_000_000_000} SUI
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2">
-                <p className="text-gray-300">
-                  {isFree
-                    ? "This video is free, but you need to claim access."
-                    : "You need to purchase this video to watch."}
-                </p>
-                <Button onClick={handleBuy} disabled={isBuying}>
-                  {isBuying
-                    ? "Processing..."
-                    : isFree
-                    ? "Get Access for Free"
-                    : `Buy Access (${
-                        Number(fields.price) / 1_000_000_000
-                      } SUI)`}
-                </Button>
-              </div>
+              <video
+                ref={videoRef}
+                controls
+                className="h-full w-full"
+                poster={
+                  fields.cover_blob_id
+                    ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${fields.cover_blob_id}`
+                    : undefined
+                }
+              />
             )}
-            {error && <p className="text-red-500 mt-2">{error}</p>}
           </div>
-        ) : (
-          <video
-            ref={videoRef}
-            controls
-            className="w-full h-full"
-            poster={
-              fields.cover_blob_id
-                ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${fields.cover_blob_id}`
-                : undefined
-            }
-          />
-        )}
+        </div>
+
+        {/* Info Area */}
+        <div className="mx-auto mt-8 grid max-w-5xl gap-8">
+          {/* Left: Title, Desc */}
+          <div className="space-y-6 lg:col-span-2">
+            <div>
+              <h1 className="wrap-break-word text-3xl font-bold leading-tight tracking-tighter md:text-4xl">
+                {fields.title}
+              </h1>
+              <div className="mt-4 flex items-center gap-3 text-muted-foreground">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary">
+                  <User className="h-5 w-5" />
+                </div>
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-sm font-medium text-foreground">
+                    Creator
+                  </span>
+                  <span className="text-sm font-mono">
+                    {fields.creator.slice(0, 6)}...{fields.creator.slice(-4)}
+                    {isCreator && " (You)"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold">Description</h3>
+              <div className="prose prose-zinc max-w-none dark:prose-invert">
+                <p className="whitespace-pre-wrap wrap-break-word leading-relaxed text-muted-foreground">
+                  {fields.description || "No description provided."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Meta Card */}
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Film className="h-5 w-5" />
+                  Video Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Price</span>
+                  <span className="text-xl font-bold">
+                    {isFree
+                      ? "Free"
+                      : `${Number(fields.price) / 1_000_000_000} SUI`}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Status</span>
+                  {hasAccess ? (
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
+                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                      Owned
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
+                      <Lock className="mr-1 h-3 w-3" />
+                      Locked
+                    </span>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <span className="text-sm font-medium">Video ID</span>
+                  <code className="block w-full break-all rounded bg-muted p-2 text-xs text-muted-foreground">
+                    {id}
+                  </code>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
