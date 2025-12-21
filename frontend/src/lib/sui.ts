@@ -133,19 +133,43 @@ export async function uploadVideoAssetsFlow(
   const encryptedKey = await encryptKeyWithSeal(assets.aesKey, sealId);
   console.log("Key Encrypted. Size:", encryptedKey.length);
 
-  // --- 0.1 上傳加密後的 Key 到 Walrus (優先獲取真實 ID) ---
-  console.log("Uploading Encrypted Key to Walrus...");
-  // 使用一個臨時的 Mock ID 作為檔名，但我們會拿到真實的 Blob ID
+  // --- 0.1 上傳所有檔案到 Walrus (優先獲取真實 ID) ---
+  console.log("Uploading Assets to Walrus...");
+
+  // 1. Upload Video First to get Blob ID
+  const tempVidName = generateMockId("video");
+  const realVideoBlobId = await uploadToWalrus(assets.video, tempVidName);
+  console.log("Video Uploaded:", realVideoBlobId);
+
+  // 2. Modify M3U8 to point to the real video blob
+  const videoUrl = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${realVideoBlobId}`;
+  const modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
+  const m3u8Bytes = new TextEncoder().encode(modifiedM3u8);
+
+  // 3. Upload Others
   const tempKeyName = generateMockId("key");
-  const realKeyBlobId = await uploadToWalrus(encryptedKey, tempKeyName);
-  console.log("Real Key Blob ID:", realKeyBlobId);
+  const tempM3uName = generateMockId("m3u8");
+  const tempCovName = generateMockId("cover");
+
+  const [realKeyBlobId, realM3u8BlobId, realCoverBlobId] = await Promise.all([
+    uploadToWalrus(encryptedKey, tempKeyName),
+    uploadToWalrus(m3u8Bytes, tempM3uName),
+    uploadToWalrus(assets.cover, tempCovName),
+  ]);
+
+  console.log("Real Blob IDs:", {
+    key: realKeyBlobId,
+    video: realVideoBlobId,
+    m3u8: realM3u8BlobId,
+    cover: realCoverBlobId,
+  });
 
   // --- A. 計算費用 (前端估算) ---
   const EPOCHS = 1; // 測試用：降低 Epochs
   const PRICE_PER_BYTE = 1; // 測試用：降低費率以配合 Mock DEX 流動性
 
   const sizeVideo = assets.video.length;
-  const sizeM3u8 = new TextEncoder().encode(assets.m3u8).length;
+  const sizeM3u8 = m3u8Bytes.length;
   const sizeCover = assets.cover.size;
   const sizeKey = encryptedKey.length;
   const totalSize = sizeVideo + sizeM3u8 + sizeCover + sizeKey;
@@ -182,17 +206,13 @@ export async function uploadVideoAssetsFlow(
   tx.transferObjects([walCoin], account);
 
   // 4. [Metadata] 呼叫 SuiStream 合約記錄影片資訊
-  const vidId = generateMockId("video");
-  const m3uId = generateMockId("m3u8");
-  const covId = generateMockId("cover");
-
-  // 注意：這裡我們傳入真實的 Key Blob ID
+  // 注意：這裡我們傳入真實的 Blob ID
   tx.moveCall({
     target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::create_video`,
     arguments: [
       tx.pure.string(metadata.title),
       tx.pure.string(metadata.description),
-      tx.pure.string(m3uId),
+      tx.pure.string(realM3u8BlobId), // 真實 M3U8 ID
       tx.pure.vector("u8", sealId), // 傳入 Seal ID
       tx.pure.string(realKeyBlobId), // 傳入真實的 Key Blob ID
       tx.pure.u64(metadata.price), // 傳入價格
@@ -206,18 +226,6 @@ export async function uploadVideoAssetsFlow(
   });
 
   console.log("Tx Digest:", result.digest);
-
-  // --- D. 上傳其餘實體檔案 ---
-  console.log("Uploading remaining assets to Walrus...");
-
-  const m3u8Bytes = new TextEncoder().encode(assets.m3u8);
-
-  await Promise.all([
-    uploadToWalrus(assets.video, vidId),
-    uploadToWalrus(m3u8Bytes, m3uId),
-    uploadToWalrus(assets.cover, covId),
-    // Key 已經上傳過了，不用再傳
-  ]);
 
   return result;
 }

@@ -172,6 +172,9 @@ async function aesEncryptSegments(
   for (let segment of segments) {
     // 使用隨機 IV
     const iv = window.crypto.getRandomValues(new Uint8Array(16));
+    console.debug(
+      `Segment ${segment.name} raw size: ${segment.data.byteLength}`
+    );
     const encryptedData = await window.crypto.subtle.encrypt(
       {
         name: "AES-CBC",
@@ -179,6 +182,9 @@ async function aesEncryptSegments(
       },
       cryptoKey,
       segment.data as BufferSource
+    );
+    console.debug(
+      `Segment ${segment.name} encrypted size: ${encryptedData.byteLength}`
     );
     // 將加密後的資料與 IV 組合起來存放
     const encryptedArray = new Uint8Array(encryptedData);

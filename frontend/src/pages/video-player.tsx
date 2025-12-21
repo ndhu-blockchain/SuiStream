@@ -5,13 +5,14 @@ import {
   useSignPersonalMessage,
 } from "@mysten/dapp-kit";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SealClient, SessionKey } from "@mysten/seal";
 import { suiClient, VIDEO_PLATFORM_PACKAGE_ID } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
 import { bcs } from "@mysten/sui/bcs";
+import Hls from "hls.js";
 
 // 實作一個簡單的 PublicKey Adapter
 class SimplePublicKey extends PublicKey {
@@ -53,6 +54,7 @@ export default function VideoPlayerPage() {
   const [decryptedKey, setDecryptedKey] = useState<Uint8Array | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [error, setError] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // 1. 獲取影片 Metadata (從鏈上物件)
   const { data: videoObject, isPending } = useSuiClientQuery("getObject", {
@@ -61,6 +63,154 @@ export default function VideoPlayerPage() {
   });
 
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
+
+  useEffect(() => {
+    if (!decryptedKey || !videoObject || !videoRef.current) return;
+
+    const content = videoObject.data?.content as any;
+    const fields = content.fields;
+    // Use ipfs_hash as m3u8_blob_id
+    const m3u8BlobId = fields.ipfs_hash;
+
+    const initPlayer = async () => {
+      if (Hls.isSupported()) {
+        // 1. Fetch M3U8
+        const m3u8Url = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${m3u8BlobId}`;
+        try {
+          const response = await fetch(m3u8Url);
+          if (!response.ok) throw new Error("Failed to fetch m3u8");
+          let m3u8Text = await response.text();
+
+          // 2. Modify M3U8: Remove Encryption Tag
+          m3u8Text = m3u8Text.replace(
+            /#EXT-X-KEY:METHOD=AES-128,URI="video.key"\n/g,
+            ""
+          );
+
+          // 3. Find the video URL from the M3U8 content
+          // The M3U8 should contain the full Walrus URL now (since we embedded it during upload)
+          const videoUrlMatch = m3u8Text.match(
+            /(https:\/\/aggregator\.walrus-testnet\.walrus\.space\/v1\/blobs\/[a-zA-Z0-9_-]+)/
+          );
+          const videoUrl = videoUrlMatch ? videoUrlMatch[0] : "";
+
+          if (!videoUrl) {
+            console.error("Could not find video URL in M3U8");
+            // Fallback or error handling
+          }
+
+          const hls = new Hls({
+            enableWorker: false,
+            loader: class CustomLoader extends Hls.DefaultConfig.loader {
+              constructor(config: any) {
+                super(config);
+                const load = this.load.bind(this);
+                this.load = async (
+                  context: any,
+                  config: any,
+                  callbacks: any
+                ) => {
+                  if (context.url === videoUrl) {
+                    try {
+                      const fetchConfig = {
+                        headers: {} as any,
+                      };
+                      if (context.rangeStart !== undefined) {
+                        fetchConfig.headers[
+                          "Range"
+                        ] = `bytes=${context.rangeStart}-${context.rangeEnd}`;
+                      }
+
+                      const res = await fetch(context.url, fetchConfig);
+                      if (!res.ok) throw new Error("Failed to fetch segment");
+                      const buffer = await res.arrayBuffer();
+                      const encryptedChunk = new Uint8Array(buffer);
+
+                      console.log(
+                        `[CustomLoader] Fetched chunk: ${encryptedChunk.length} bytes. Range: ${context.rangeStart}-${context.rangeEnd}`
+                      );
+
+                      if (encryptedChunk.length < 17) {
+                        throw new Error(
+                          `Chunk too small: ${encryptedChunk.length}`
+                        );
+                      }
+
+                      // Decrypt: [IV (16 bytes)] [Encrypted Data]
+                      const iv = encryptedChunk.slice(0, 16);
+                      const data = encryptedChunk.slice(16);
+
+                      console.log(`[CustomLoader] IV: ${toHex(iv)}`);
+                      console.log(`[CustomLoader] Data size: ${data.length}`);
+
+                      let dataToDecrypt = data;
+                      if (data.length % 16 !== 0) {
+                        console.warn(
+                          `[CustomLoader] Warning: Data length (${data.length}) is not a multiple of 16! Decryption might fail.`
+                        );
+                        const newLength = data.length - (data.length % 16);
+                        console.warn(
+                          `[CustomLoader] Truncating to ${newLength} bytes.`
+                        );
+                        dataToDecrypt = data.slice(0, newLength);
+                      }
+
+                      const key = await window.crypto.subtle.importKey(
+                        "raw",
+                        decryptedKey,
+                        "AES-CBC",
+                        false,
+                        ["decrypt"]
+                      );
+
+                      const decryptedChunk = await window.crypto.subtle.decrypt(
+                        { name: "AES-CBC", iv: iv },
+                        key,
+                        dataToDecrypt
+                      );
+
+                      console.log(
+                        `[CustomLoader] Decryption successful! Decrypted size: ${decryptedChunk.byteLength}`
+                      );
+
+                      callbacks.onSuccess(
+                        { data: decryptedChunk, url: context.url },
+                        { url: context.url },
+                        context
+                      );
+                    } catch (err) {
+                      console.error("Segment load error:", err);
+                      callbacks.onError(err, context, context);
+                    }
+                  } else {
+                    load(context, config, callbacks);
+                  }
+                };
+              }
+            } as any,
+          });
+
+          const blob = new Blob([m3u8Text], {
+            type: "application/vnd.apple.mpegurl",
+          });
+          const manifestUrl = URL.createObjectURL(blob);
+
+          hls.loadSource(manifestUrl);
+          hls.attachMedia(videoRef.current!);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            videoRef.current
+              ?.play()
+              .catch((e) => console.error("Auto-play failed", e));
+          });
+        } catch (e) {
+          console.error("Player init failed:", e);
+        }
+      }
+    };
+
+    initPlayer();
+  }, [decryptedKey, videoObject]);
 
   const handlePlay = async () => {
     if (!videoObject || !currentAccount) return;
@@ -238,13 +388,16 @@ export default function VideoPlayerPage() {
             {error && <p className="text-red-500 mt-2">{error}</p>}
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <p className="text-green-500 text-xl">
-              Key Decrypted! Ready to Play. <br />
-              (Player integration pending...)
-            </p>
-            {/* 這裡未來會整合 Hls.js 並注入 decryptedKey */}
-          </div>
+          <video
+            ref={videoRef}
+            controls
+            className="w-full h-full"
+            poster={
+              fields.cover_blob_id
+                ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${fields.cover_blob_id}`
+                : undefined
+            }
+          />
         )}
       </div>
     </div>
