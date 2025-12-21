@@ -1,6 +1,3 @@
-const SUI_COIN_TYPE = "0x2::sui::SUI";
-const MIST_PER_SUI = 1_000_000_000;
-
 import {
   getFullnodeUrl,
   SuiClient,
@@ -14,6 +11,10 @@ import { toHex } from "@mysten/sui/utils";
 // 1. 設定
 
 const NETWORK = "testnet";
+const MIST_PER_SUI = 1_000_000_000;
+const SUI_COIN_TYPE = "0x2::sui::SUI";
+const WAL_COIN_TYPE =
+  "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
 
 // Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
@@ -25,9 +26,6 @@ const MOCK_DEX_PACKAGE_ID =
 const MOCK_DEX_BANK_ID =
   "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
 
-const WAL_COIN_TYPE =
-  "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
-
 // Walrus Aggregator
 export const WALRUS_AGGREGATOR_URL =
   "https://aggregator.walrus-testnet.walrus.space/v1/blobs/";
@@ -36,6 +34,10 @@ export const WALRUS_AGGREGATOR_FORMAT =
 
 // Walrus Publisher
 const WALRUS_PUBLISHER_URL = "https://publisher.walrus-testnet.walrus.space";
+
+export const WALRUS_EPOCHS_MAX = 53;
+
+const WALRUS_DEFAULT_EPOCHS = 2;
 
 // 初始化 Client
 export const suiClient = new SuiClient({ url: getFullnodeUrl(NETWORK) });
@@ -67,10 +69,13 @@ async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     content instanceof Uint8Array ? new Blob([content as any]) : content;
 
-  const response = await fetch(`${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=2`, {
-    method: "PUT",
-    body: body,
-  });
+  const response = await fetch(
+    `${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=${WALRUS_DEFAULT_EPOCHS}`,
+    {
+      method: "PUT",
+      body: body,
+    }
+  );
 
   if (!response.ok) {
     throw new Error(`Failed to upload blob: ${response.statusText}`);
