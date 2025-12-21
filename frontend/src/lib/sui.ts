@@ -21,7 +21,7 @@ const MOCK_DEX_PACKAGE_ID =
 
 // Video Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x7825c610d457f78b2d989d63b993dfd383801577be59931a740d27e17e4949a8";
+  "0xe0361d9cce250c5d56d06fe4f00c8055b66354280b05dff01307aff3b00ea81a";
 
 // Mock Dex Bank ID
 const MOCK_DEX_BANK_ID =
