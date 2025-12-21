@@ -79,6 +79,9 @@ public entry fun create_video(
 public entry fun buy_video(video: &mut Video, payment: Coin<SUI>, ctx: &mut TxContext) {
     assert!(payment.value() >= video.price, EInsufficientPayment);
 
+    // TODO: 平台抽成
+    // TODO: 存續基金
+
     // 支付給創作者
     transfer::public_transfer(payment, video.creator);
 
