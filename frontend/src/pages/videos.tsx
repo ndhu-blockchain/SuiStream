@@ -16,6 +16,7 @@ import {
 import { buyVideo, VIDEO_PLATFORM_PACKAGE_ID } from "@/lib/sui";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 export default function VideosPage() {
   const currentAccount = useCurrentAccount();
@@ -138,11 +139,11 @@ export default function VideosPage() {
                           currentAccount.address,
                           signAndExecuteTransaction
                         );
-                        alert("Purchase Successful!");
+                        toast.success("Purchase Successful!");
                         refetchOwnedObjects();
                       } catch (e) {
                         console.error(e);
-                        alert("Purchase Failed");
+                        toast.error("Purchase Failed");
                       } finally {
                         setBuyingId(null);
                       }

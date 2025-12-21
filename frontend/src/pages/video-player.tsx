@@ -14,6 +14,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
 import Hls from "hls.js";
+import { toast } from "sonner";
 
 // 實作一個簡單的 PublicKey Adapter
 class SimplePublicKey extends PublicKey {
@@ -249,11 +250,11 @@ export default function VideoPlayerPage() {
         currentAccount.address,
         signAndExecuteTransaction
       );
-      alert("Purchase Successful!");
+      toast.success("Purchase Successful!");
       refetchOwnedObjects();
     } catch (e: any) {
       console.error(e);
-      alert("Purchase Failed: " + e.message);
+      toast.error("Purchase Failed: " + e.message);
     } finally {
       setIsBuying(false);
     }

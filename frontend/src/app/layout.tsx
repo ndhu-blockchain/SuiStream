@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { WalletButton } from "@/components/common/wallet-button";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { Toaster } from "@/components/ui/sonner";
 
 export function AppLayout() {
   return (
@@ -27,6 +28,7 @@ export function AppLayout() {
           </a>
         </Button>
       </footer>
+      <Toaster />
     </div>
   );
 }

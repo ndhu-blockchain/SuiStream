@@ -78,6 +78,21 @@ sui client call \
   --gas-budget 10000000
 ```
 
+### 4. 領出 SUI
+
+```bash
+PACKAGE_ID=0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091
+BANK_ID=0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd
+WAL_TYPE=0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL
+MY_ADDRESS=$(sui client active-address)
+
+sui client ptb \
+  --move-call "$PACKAGE_ID::mock_dex::withdraw_sui<$WAL_TYPE>" @$BANK_ID \
+  --assign sui_coin \
+  --transfer-objects "[sui_coin]" @$MY_ADDRESS \
+  --gas-budget 10000000
+```
+
 ---
 
 ## 前端設定 (Frontend Setup)
