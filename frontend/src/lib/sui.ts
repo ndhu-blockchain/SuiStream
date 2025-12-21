@@ -4,8 +4,7 @@ const MIST_PER_SUI = 1_000_000_000;
 import {
   getFullnodeUrl,
   SuiClient,
-  SuiTransactionBlockResponse,
-  SuiTransactionBlockResponseOptions,
+  type SuiTransactionBlockResponseOptions,
 } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 import { SealClient } from "@mysten/seal";
@@ -44,7 +43,9 @@ export const suiClient = new SuiClient({ url: getFullnodeUrl(NETWORK) });
 // 將檔案上傳至 Walrus Publisher (HTTP PUT)
 async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
   // 處理 Uint8Array 轉 Blob 的型別問題
-  const body = content instanceof Uint8Array ? new Blob([content]) : content;
+  const body =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    content instanceof Uint8Array ? new Blob([content as any]) : content;
 
   const response = await fetch(`${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=2`, {
     method: "PUT",
@@ -120,7 +121,8 @@ export async function uploadVideoAssetsFlow(
   signAndExecuteTransaction: (input: {
     transaction: Transaction;
     options?: SuiTransactionBlockResponseOptions;
-  }) => Promise<SuiTransactionBlockResponse>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) => Promise<any>,
   onStatusUpdate?: (status: string) => void
 ) {
   const tx = new Transaction();
@@ -239,11 +241,12 @@ export async function uploadVideoAssetsFlow(
 // 購買影片
 export async function buyVideo(
   video: { id: string; price: number },
-  account: string,
+  _account: string,
   signAndExecuteTransaction: (input: {
     transaction: Transaction;
     options?: SuiTransactionBlockResponseOptions;
-  }) => Promise<SuiTransactionBlockResponse>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) => Promise<any>
 ) {
   const tx = new Transaction();
 

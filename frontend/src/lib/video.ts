@@ -139,7 +139,8 @@ async function reEncodingSplitVideo(
   console.debug("Temporary files cleaned up.");
 
   const coverData = await ffmpegInstance.readFile("cover.png");
-  const coverFile = new File([coverData], "cover.png", {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const coverFile = new File([coverData as any], "cover.png", {
     type: "image/png",
   });
   ffmpegInstance.deleteFile("cover.png");
