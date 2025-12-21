@@ -42,7 +42,7 @@ async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
   const body =
     content instanceof Uint8Array ? new Blob([content as any]) : content;
 
-  const response = await fetch(`${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=5`, {
+  const response = await fetch(`${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=2`, {
     method: "PUT",
     body: body,
   });
