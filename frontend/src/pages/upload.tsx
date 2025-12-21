@@ -24,7 +24,7 @@ import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
-import { uploadVideoAssetsFlow } from "@/lib/sui";
+import { MIST_PER_SUI, uploadVideoAssetsFlow } from "@/lib/sui";
 
 export default function UploadPage() {
   const currentAccount = useCurrentAccount();
@@ -337,7 +337,7 @@ export default function UploadPage() {
                     {
                       title: videoTitle,
                       description: videoDescription,
-                      price: videoPrice * 1_000_000_000, // 轉為 MIST
+                      price: videoPrice * MIST_PER_SUI, // 轉為 MIST
                     },
                     currentAccount.address,
                     signAndExecuteTransaction,

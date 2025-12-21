@@ -11,7 +11,13 @@ import {
   useSignAndExecuteTransaction,
   useSuiClientQuery,
 } from "@mysten/dapp-kit";
-import { buyVideo, VIDEO_PLATFORM_PACKAGE_ID, suiClient } from "@/lib/sui";
+import {
+  buyVideo,
+  VIDEO_PLATFORM_PACKAGE_ID,
+  suiClient,
+  MIST_PER_SUI,
+  WALRUS_AGGREGATOR_URL,
+} from "@/lib/sui";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -97,10 +103,10 @@ export default function VideosPage() {
             const videoId = parsedJson.id;
             const title = parsedJson.title;
             const price = parsedJson.price
-              ? Number(parsedJson.price) / 1_000_000_000
+              ? Number(parsedJson.price) / MIST_PER_SUI
               : 0; // MIST to SUI
             const coverUrl = parsedJson.cover_blob_id
-              ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${parsedJson.cover_blob_id}`
+              ? `${WALRUS_AGGREGATOR_URL}${parsedJson.cover_blob_id}`
               : null;
 
             const isCreator = currentAccount?.address === parsedJson.creator;
@@ -128,13 +134,7 @@ export default function VideosPage() {
                       </div>
                     )}
                     <div className="absolute right-2 top-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-                          isFree
-                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                            : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-                        }`}
-                      >
+                      <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 bg-background">
                         {isFree ? "Free" : `${price} SUI`}
                       </span>
                     </div>

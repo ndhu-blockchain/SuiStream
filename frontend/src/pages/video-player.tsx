@@ -12,7 +12,15 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect, useRef } from "react";
 import { SealClient, SessionKey } from "@mysten/seal";
-import { suiClient, VIDEO_PLATFORM_PACKAGE_ID, buyVideo } from "@/lib/sui";
+import {
+  suiClient,
+  VIDEO_PLATFORM_PACKAGE_ID,
+  buyVideo,
+  MIST_PER_SUI,
+  WALRUS_AGGREGATOR_URL,
+  WALRUS_AGGREGATOR_FORMAT,
+  sealClient,
+} from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
@@ -114,7 +122,7 @@ export default function VideoPlayerPage() {
     const initPlayer = async () => {
       if (Hls.isSupported()) {
         // 1. Fetch M3U8
-        const m3u8Url = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${m3u8BlobId}`;
+        const m3u8Url = `${WALRUS_AGGREGATOR_URL}${m3u8BlobId}`;
         try {
           const response = await fetch(m3u8Url);
           if (!response.ok) throw new Error("Failed to fetch m3u8");
@@ -128,9 +136,7 @@ export default function VideoPlayerPage() {
 
           // 3. Find the video URL from the M3U8 content
           // The M3U8 should contain the full Walrus URL now (since we embedded it during upload)
-          const videoUrlMatch = m3u8Text.match(
-            /(https:\/\/aggregator\.walrus-testnet\.walrus\.space\/v1\/blobs\/[a-zA-Z0-9_-]+)/
-          );
+          const videoUrlMatch = m3u8Text.match(WALRUS_AGGREGATOR_FORMAT);
           const videoUrl = videoUrlMatch ? videoUrlMatch[0] : "";
 
           if (!videoUrl) {
@@ -357,9 +363,7 @@ export default function VideoPlayerPage() {
       setStatusText("Fetching Encrypted Key from Walrus...");
       console.log("Fetching Encrypted Key from Walrus...", keyBlobId);
       // 3. Fetch Encrypted Key
-      const response = await fetch(
-        `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${keyBlobId}`
-      );
+      const response = await fetch(`${WALRUS_AGGREGATOR_URL}${keyBlobId}`);
       if (!response.ok) throw new Error("Failed to fetch key from Walrus");
       const encryptedKey = new Uint8Array(await response.arrayBuffer());
 
@@ -404,24 +408,7 @@ export default function VideoPlayerPage() {
 
       setStatusText("Decrypting with Seal...");
       console.log("Decrypting with Seal...");
-      const client = new SealClient({
-        suiClient,
-        serverConfigs: [
-          {
-            objectId:
-              "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75",
-            weight: 1,
-          },
-          {
-            objectId:
-              "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8",
-            weight: 1,
-          },
-        ],
-        verifyKeyServers: false,
-        // 增加 timeout 避免網路問題
-        timeout: 30000,
-      });
+      const client = sealClient;
 
       const decrypted = await client.decrypt({
         data: encryptedKey,
@@ -568,7 +555,7 @@ export default function VideoPlayerPage() {
                         ) : (
                           <>
                             <Coins className="h-5 w-5" />
-                            Buy for {Number(fields.price) / 1_000_000_000} SUI
+                            Buy for {Number(fields.price) / MIST_PER_SUI} SUI
                           </>
                         )}
                       </Button>
@@ -583,7 +570,7 @@ export default function VideoPlayerPage() {
                 className="h-full w-full"
                 poster={
                   fields.cover_blob_id
-                    ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${fields.cover_blob_id}`
+                    ? `${WALRUS_AGGREGATOR_URL}${fields.cover_blob_id}`
                     : undefined
                 }
               />
@@ -642,7 +629,7 @@ export default function VideoPlayerPage() {
                   <span className="text-xl font-bold">
                     {isFree
                       ? "Free"
-                      : `${Number(fields.price) / 1_000_000_000} SUI`}
+                      : `${Number(fields.price) / MIST_PER_SUI} SUI`}
                   </span>
                 </div>
 

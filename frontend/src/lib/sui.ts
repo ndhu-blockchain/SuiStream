@@ -9,33 +9,54 @@ import {
 import { Transaction } from "@mysten/sui/transactions";
 import { SealClient } from "@mysten/seal";
 import { toHex } from "@mysten/sui/utils";
+import { seal } from "node_modules/@mysten/seal/dist/esm/client";
 
 // =================================================================
 // 1. 設定
 
 const NETWORK = "testnet";
 
-// Mock DEX Package ID
-const MOCK_DEX_PACKAGE_ID =
-  "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
-
-// Video Platform Package ID
+// Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
   "0xe0361d9cce250c5d56d06fe4f00c8055b66354280b05dff01307aff3b00ea81a";
 
-// Mock Dex Bank ID
+// Mock DEX
+const MOCK_DEX_PACKAGE_ID =
+  "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
 const MOCK_DEX_BANK_ID =
   "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
 
-// [WAL 代幣類型]
 const WAL_COIN_TYPE =
   "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
+
+// Walrus Aggregator
+export const WALRUS_AGGREGATOR_URL =
+  "https://aggregator.walrus-testnet.walrus.space/v1/blobs/";
+export const WALRUS_AGGREGATOR_FORMAT =
+  /(https:\/\/aggregator\.walrus-testnet\.walrus\.space\/v1\/blobs\/[a-zA-Z0-9_-]+)/;
 
 // Walrus Publisher
 const WALRUS_PUBLISHER_URL = "https://publisher.walrus-testnet.walrus.space";
 
 // 初始化 Client
 export const suiClient = new SuiClient({ url: getFullnodeUrl(NETWORK) });
+export const sealClient = new SealClient({
+  suiClient,
+  serverConfigs: [
+    {
+      objectId:
+        "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75",
+      weight: 1,
+    },
+    {
+      objectId:
+        "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8",
+      weight: 1,
+    },
+  ],
+  verifyKeyServers: false,
+  timeout: 30000,
+});
 
 // =================================================================
 // 2. 函式
@@ -145,7 +166,7 @@ export async function uploadVideoAssetsFlow(
   console.log("Video Uploaded:", realVideoBlobId);
 
   // 2. Modify M3U8 to point to the real video blob
-  const videoUrl = `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${realVideoBlobId}`;
+  const videoUrl = `${WALRUS_AGGREGATOR_URL}${realVideoBlobId}`;
   const modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
   const m3u8Bytes = new TextEncoder().encode(modifiedM3u8);
 
