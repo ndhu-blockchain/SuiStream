@@ -434,7 +434,7 @@ export default function VideoPlayerPage() {
   });
   const isCreator = fields.creator === currentAccount?.address;
   const isFree = Number(fields.price) === 0;
-  const hasAccess = !!pass || isCreator || isFree;
+  const hasAccess = !!pass || isCreator;
 
   return (
     <div className="container mx-auto p-8">
@@ -459,11 +459,15 @@ export default function VideoPlayerPage() {
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <p className="text-gray-300">
-                  You need to purchase this video to watch.
+                  {isFree
+                    ? "This video is free, but you need to claim access."
+                    : "You need to purchase this video to watch."}
                 </p>
                 <Button onClick={handleBuy} disabled={isBuying}>
                   {isBuying
-                    ? "Buying..."
+                    ? "Processing..."
+                    : isFree
+                    ? "Get Access for Free"
                     : `Buy Access (${
                         Number(fields.price) / 1_000_000_000
                       } SUI)`}
