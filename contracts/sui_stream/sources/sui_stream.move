@@ -1,10 +1,14 @@
 module sui_stream::video_platform;
 
 use std::string::String;
+use sui::balance::{Self, Balance};
+use sui::coin::{Self, Coin};
 use sui::event;
+use sui::sui::SUI;
 
 const EInvalidId: u64 = 1;
 const ENotAuthorized: u64 = 2;
+const EInsufficientPayment: u64 = 3;
 
 public struct Video has key, store {
     id: UID,
@@ -14,12 +18,24 @@ public struct Video has key, store {
     creator: address,
     seal_id: vector<u8>, // Seal 識別 ID (用於加密金鑰)
     key_blob_id: String, // 加密金鑰在 Walrus 上的 Blob ID
+    price: u64, // 影片價格 (SUI)
+}
+
+public struct AccessPass has key, store {
+    id: UID,
+    video_id: ID,
 }
 
 public struct VideoCreated has copy, drop {
     id: ID,
     title: String,
     creator: address,
+    price: u64,
+}
+
+public struct VideoPurchased has copy, drop {
+    video_id: ID,
+    buyer: address,
 }
 
 public entry fun create_video(
@@ -28,6 +44,7 @@ public entry fun create_video(
     ipfs_hash: String,
     seal_id: vector<u8>,
     key_blob_id: String,
+    price: u64,
     ctx: &mut TxContext,
 ) {
     let id = object::new(ctx);
@@ -40,21 +57,64 @@ public entry fun create_video(
         creator: ctx.sender(),
         seal_id: seal_id,
         key_blob_id: key_blob_id,
+        price: price,
     };
 
     event::emit(VideoCreated {
         id: video_id,
         title: video.title,
         creator: video.creator,
+        price: video.price,
     });
 
-    transfer::transfer(video, ctx.sender());
+    // 將影片物件設為共享，讓所有人都能看到並購買
+    transfer::share_object(video);
 }
 
-public entry fun seal_approve(id: vector<u8>, video: &Video, ctx: &TxContext) {
-    // 1. 驗證請求的 ID 是否對應到傳入的 Video 物件中的 seal_id
-    assert!(video.seal_id == id, EInvalidId);
+public entry fun buy_video(video: &mut Video, payment: Coin<SUI>, ctx: &mut TxContext) {
+    assert!(payment.value() >= video.price, EInsufficientPayment);
 
-    // 2. 驗證發送者是否為影片擁有者 (Creator)
+    // 支付給創作者
+    transfer::public_transfer(payment, video.creator);
+
+    // 發放 AccessPass 給購買者
+    let pass = AccessPass {
+        id: object::new(ctx),
+        video_id: object::id(video),
+    };
+
+    event::emit(VideoPurchased {
+        video_id: object::id(video),
+        buyer: ctx.sender(),
+    });
+
+    transfer::public_transfer(pass, ctx.sender());
+}
+
+// 創作者專用的驗證 (無需 AccessPass)
+public entry fun seal_approve(id: vector<u8>, video: &Video, ctx: &TxContext) {
+    assert!(video.seal_id == id, EInvalidId);
     assert!(video.creator == ctx.sender(), ENotAuthorized);
+}
+
+// 購買者專用的驗證 (需持有 AccessPass)
+public entry fun seal_approve_with_pass(
+    id: vector<u8>,
+    video: &Video,
+    pass: &AccessPass,
+    ctx: &TxContext,
+) {
+    assert!(video.seal_id == id, EInvalidId);
+    assert!(pass.video_id == object::id(video), ENotAuthorized);
+}
+
+public entry fun seal_approve_viewer(
+    id: vector<u8>,
+    video: &Video,
+    pass: &AccessPass,
+    _ctx: &TxContext,
+) {
+    assert!(video.seal_id == id, EInvalidId);
+    // 驗證 AccessPass 是否對應此影片
+    assert!(pass.video_id == object::id(video), ENotAuthorized);
 }

@@ -14,15 +14,15 @@ const NETWORK = "testnet";
 
 // [Mock DEX Package ID] (舊的 Package，用於 Swap)
 const MOCK_DEX_PACKAGE_ID =
-  "0xe13e305cea49c187ad85cb954deab95149fd33b56db31dc34524525bb7210cb9";
+  "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
 
 // [Video Platform Package ID] (新的 Package，包含 Seal 支援)
-const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x940c0056896a5932493163b153233b226d865a90cc893ba83f83f8a30b3a008a";
+export const VIDEO_PLATFORM_PACKAGE_ID =
+  "0x368429835bcf33cfa24df151c6cf3afc0278b9e731d1c6140670d0b6aeedb091";
 
 // [你的 Mock Dex Bank ID] (剛剛存錢進去的那個 Shared Object ID)
 const MOCK_DEX_BANK_ID =
-  "0xf1af89dab6e310c5de38e8b39d9e57387886a95738c645099ae0a754dc81a45a";
+  "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
 
 // [WAL 代幣類型]
 const WAL_COIN_TYPE =
@@ -120,7 +120,7 @@ export async function uploadVideoAssetsFlow(
     cover: File;
     aesKey: Uint8Array;
   },
-  metadata: { title: string; description: string },
+  metadata: { title: string; description: string; price: number },
   account: string,
   signAndExecuteTransaction: any
 ) {
@@ -195,11 +195,11 @@ export async function uploadVideoAssetsFlow(
       tx.pure.string(m3uId),
       tx.pure.vector("u8", sealId), // 傳入 Seal ID
       tx.pure.string(realKeyBlobId), // 傳入真實的 Key Blob ID
+      tx.pure.u64(metadata.price), // 傳入價格
     ],
   });
 
   // --- C. 執行交易 ---
-  console.log("Submitting Transaction...");
   const result = await signAndExecuteTransaction({
     transaction: tx,
     options: { showEffects: true },
@@ -218,6 +218,34 @@ export async function uploadVideoAssetsFlow(
     uploadToWalrus(assets.cover, covId),
     // Key 已經上傳過了，不用再傳
   ]);
+
+  return result;
+}
+
+/**
+ * 購買影片
+ */
+export async function buyVideo(
+  video: { id: string; price: number },
+  account: string,
+  signAndExecuteTransaction: any
+) {
+  const tx = new Transaction();
+
+  // 1. Split Coin for Payment
+  const [payment] = tx.splitCoins(tx.gas, [tx.pure.u64(video.price)]);
+
+  // 2. Call buy_video
+  tx.moveCall({
+    target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::buy_video`,
+    arguments: [tx.object(video.id), payment],
+  });
+
+  // 3. Execute
+  const result = await signAndExecuteTransaction({
+    transaction: tx,
+    options: { showEffects: true },
+  });
 
   return result;
 }

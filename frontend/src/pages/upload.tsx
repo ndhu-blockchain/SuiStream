@@ -11,7 +11,7 @@ import {
   mergeTSGenerateM3U8,
 } from "@/lib/video";
 import { bytesToDisplaySize } from "@/lib/conversion";
-import { Label } from "@radix-ui/react-dropdown-menu";
+import { Label } from "@/components/ui/label";
 import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
@@ -55,6 +55,7 @@ export default function UploadPage() {
   const [videoCoverFile, setVideoCoverFile] = useState<File | null>(null);
   const [videoTitle, setVideoTitle] = useState<string>("");
   const [videoDescription, setVideoDescription] = useState<string>("");
+  const [videoPrice, setVideoPrice] = useState<number>(0);
 
   const resetStates = () => {
     setPageStatus("waiting");
@@ -69,6 +70,7 @@ export default function UploadPage() {
     setVideoCoverFile(null);
     setVideoTitle("");
     setVideoDescription("");
+    setVideoPrice(0);
   };
 
   const videoProcess = async (videoFile: File) => {
@@ -260,6 +262,13 @@ export default function UploadPage() {
             onChange={(e) => setVideoDescription(e.target.value)}
             placeholder="Enter video description"
           />
+          <Label className="text-lg font-medium">Price (SUI)</Label>
+          <Input
+            type="number"
+            value={videoPrice}
+            onChange={(e) => setVideoPrice(Number(e.target.value))}
+            placeholder="Enter video price in SUI"
+          />
           {/* 按鈕：上傳至 Walrus / 重置 */}
           <Button
             onClick={async () => {
@@ -283,6 +292,7 @@ export default function UploadPage() {
                   {
                     title: videoTitle,
                     description: videoDescription,
+                    price: videoPrice * 1_000_000_000, // 轉為 MIST
                   },
                   currentAccount.address,
                   signAndExecuteTransaction
