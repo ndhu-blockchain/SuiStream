@@ -9,6 +9,43 @@ import { useState } from "react";
 import { SealClient, SessionKey } from "@mysten/seal";
 import { suiClient, VIDEO_PLATFORM_PACKAGE_ID } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
+import { PublicKey } from "@mysten/sui/cryptography";
+import { toBase64, toHex } from "@mysten/sui/utils";
+import { bcs } from "@mysten/sui/bcs";
+
+// 實作一個簡單的 PublicKey Adapter
+class SimplePublicKey extends PublicKey {
+  private rawBytes: Uint8Array;
+  private _flag: number;
+  private _address: string;
+
+  constructor(rawBytes: Uint8Array, flag: number, address: string) {
+    super();
+    this.rawBytes = rawBytes;
+    this._flag = flag;
+    this._address = address;
+  }
+
+  toRawBytes(): Uint8Array<ArrayBuffer> {
+    return this.rawBytes as Uint8Array<ArrayBuffer>;
+  }
+
+  flag(): number {
+    return this._flag;
+  }
+
+  async verify(
+    _data: Uint8Array,
+    _signature: Uint8Array | string
+  ): Promise<boolean> {
+    // 這裡我們不需要真的實作驗證，因為 Seal SDK 只是要拿 Public Key
+    return true;
+  }
+
+  toSuiAddress(): string {
+    return this._address;
+  }
+}
 
 export default function VideoPlayerPage() {
   const { id } = useParams();
@@ -35,6 +72,8 @@ export default function VideoPlayerPage() {
       const fields = content.fields;
       const keyBlobId = fields.key_blob_id;
       const sealId = new Uint8Array(fields.seal_id);
+      console.log("Seal ID:", sealId);
+      console.log("Seal ID (Hex):", toHex(sealId));
 
       // 1. Check for AccessPass
       const accessPasses = await suiClient.getOwnedObjects({
@@ -59,23 +98,44 @@ export default function VideoPlayerPage() {
 
       // 2. Build Transaction for Authorization
       const tx = new Transaction();
+
+      // 使用標準方式傳遞 vector<u8>
+      const sealIdArg = tx.pure.vector("u8", Array.from(sealId));
+
       if (isCreator) {
         tx.moveCall({
           target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve`,
-          arguments: [tx.pure.vector("u8", sealId), tx.object(id!)],
+          arguments: [sealIdArg, tx.object(id!)],
         });
       } else {
         tx.moveCall({
           target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_with_pass`,
           arguments: [
-            tx.pure.vector("u8", sealId),
+            sealIdArg,
             tx.object(id!),
             tx.object(pass!.data!.objectId),
           ],
         });
       }
+
       tx.setSender(currentAccount.address);
-      const txBytes = await tx.build({ client: suiClient });
+      tx.setGasBudget(20000000);
+
+      // 移除手動 Gas Payment，讓 SDK 自動處理
+      // 但保留 sender 設定
+
+      // 檢查 Transaction Data 結構
+      const txData = await tx.getData();
+      console.log("Transaction Data JSON:", JSON.stringify(txData, null, 2));
+
+      // 重要：Seal SDK 需要的是 BCS 序列化後的 TransactionData
+      // tx.build() 回傳的就是這個 Uint8Array
+      // 根據文件，必須設定 onlyTransactionKind: true
+      const txBytes = await tx.build({
+        client: suiClient,
+        onlyTransactionKind: true,
+      });
+      console.log("TxBytes Hex:", toHex(txBytes));
 
       console.log("Fetching Encrypted Key from Walrus...", keyBlobId);
       // 3. Fetch Encrypted Key
@@ -87,11 +147,24 @@ export default function VideoPlayerPage() {
 
       console.log("Creating Session Key...");
       const signerAdapter = {
-        signPersonalMessage: async (input: { message: Uint8Array }) => {
-          const res = await signPersonalMessage({ message: input.message });
-          return { bytes: res.bytes, signature: res.signature };
+        signPersonalMessage: async (message: Uint8Array) => {
+          // Seal SDK 傳入的是 Uint8Array (bytes)，而不是物件
+          const res = await signPersonalMessage({ message });
+
+          // 確保回傳的 bytes 是 base64 字串
+          return {
+            bytes: res.bytes || toBase64(message),
+            signature: res.signature,
+          };
         },
         getAddress: async () => currentAccount.address,
+        getPublicKey: () => {
+          return new SimplePublicKey(
+            new Uint8Array(currentAccount.publicKey),
+            0x00,
+            currentAccount.address
+          );
+        },
         signTransactionBlock: async () => {
           throw new Error("Not implemented");
         },
@@ -124,12 +197,14 @@ export default function VideoPlayerPage() {
           },
         ],
         verifyKeyServers: false,
+        // 增加 timeout 避免網路問題
+        timeout: 30000,
       });
 
       const decrypted = await client.decrypt({
         data: encryptedKey,
         sessionKey,
-        txBytes,
+        txBytes: txBytes,
       });
 
       setDecryptedKey(decrypted);
