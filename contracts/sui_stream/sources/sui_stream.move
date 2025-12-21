@@ -17,7 +17,7 @@ public struct Video has key, store {
     ipfs_hash: String,
     cover_blob_id: String, // 影片封面 Blob ID
     creator: address,
-    seal_id: vector<u8>, // Seal 識別 ID (用於加密金鑰)
+    seal_id: vector<u8>, // Seal 識別 ID (加密金鑰)
     key_blob_id: String, // 加密金鑰在 Walrus 上的 Blob ID
     price: u64, // 影片價格 (SUI)
 }
@@ -120,6 +120,5 @@ public entry fun seal_approve_viewer(
     _ctx: &TxContext,
 ) {
     assert!(video.seal_id == id, EInvalidId);
-    // 驗證 AccessPass 是否對應此影片
     assert!(pass.video_id == object::id(video), ENotAuthorized);
 }

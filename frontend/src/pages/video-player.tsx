@@ -157,7 +157,7 @@ export default function VideoPlayerPage() {
 
                       const key = await window.crypto.subtle.importKey(
                         "raw",
-                        decryptedKey,
+                        decryptedKey as any,
                         "AES-CBC",
                         false,
                         ["decrypt"]
