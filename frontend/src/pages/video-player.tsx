@@ -3,11 +3,12 @@ import {
   useSuiClientQuery,
   useCurrentAccount,
   useSignPersonalMessage,
+  useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef } from "react";
 import { SealClient, SessionKey } from "@mysten/seal";
-import { suiClient, VIDEO_PLATFORM_PACKAGE_ID } from "@/lib/sui";
+import { suiClient, VIDEO_PLATFORM_PACKAGE_ID, buyVideo } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
@@ -53,14 +54,34 @@ export default function VideoPlayerPage() {
   const currentAccount = useCurrentAccount();
   const [decryptedKey, setDecryptedKey] = useState<Uint8Array | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [isBuying, setIsBuying] = useState(false);
   const [error, setError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const { mutateAsync: signAndExecuteTransaction } =
+    useSignAndExecuteTransaction();
 
   // 1. 獲取影片 Metadata (從鏈上物件)
   const { data: videoObject, isPending } = useSuiClientQuery("getObject", {
     id: id!,
     options: { showContent: true },
   });
+
+  // 2. 查詢使用者擁有的 AccessPass
+  const { data: ownedObjects, refetch: refetchOwnedObjects } =
+    useSuiClientQuery(
+      "getOwnedObjects",
+      {
+        owner: currentAccount?.address || "",
+        filter: {
+          StructType: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::AccessPass`,
+        },
+        options: { showContent: true },
+      },
+      {
+        enabled: !!currentAccount,
+      }
+    );
 
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
 
@@ -211,6 +232,29 @@ export default function VideoPlayerPage() {
 
     initPlayer();
   }, [decryptedKey, videoObject]);
+
+  const handleBuy = async () => {
+    if (!videoObject || !currentAccount) return;
+    const content = videoObject.data?.content as any;
+    const fields = content.fields;
+    const price = Number(fields.price);
+
+    setIsBuying(true);
+    try {
+      await buyVideo(
+        { id: id!, price },
+        currentAccount.address,
+        signAndExecuteTransaction
+      );
+      alert("Purchase Successful!");
+      refetchOwnedObjects();
+    } catch (e: any) {
+      console.error(e);
+      alert("Purchase Failed: " + e.message);
+    } finally {
+      setIsBuying(false);
+    }
+  };
 
   const handlePlay = async () => {
     if (!videoObject || !currentAccount) return;
@@ -373,6 +417,15 @@ export default function VideoPlayerPage() {
   const content = videoObject.data.content as any;
   const fields = content.fields;
 
+  // Check access
+  const pass = ownedObjects?.data.find((p) => {
+    const content = p.data?.content as any;
+    return content.fields.video_id === id;
+  });
+  const isCreator = fields.creator === currentAccount?.address;
+  const isFree = Number(fields.price) === 0;
+  const hasAccess = !!pass || isCreator || isFree;
+
   return (
     <div className="container mx-auto p-8">
       <h1 className="text-3xl font-bold mb-4">{fields.title}</h1>
@@ -382,9 +435,31 @@ export default function VideoPlayerPage() {
         {!decryptedKey ? (
           <div className="text-center">
             <p className="text-white mb-4">Content is Encrypted</p>
-            <Button onClick={handlePlay} disabled={isDecrypting}>
-              {isDecrypting ? "Decrypting..." : "Unlock & Play"}
-            </Button>
+            {hasAccess ? (
+              <div className="flex flex-col items-center gap-2">
+                <Button onClick={handlePlay} disabled={isDecrypting}>
+                  {isDecrypting ? "Decrypting..." : "Unlock & Play"}
+                </Button>
+                {isDecrypting && (
+                  <p className="text-yellow-400 text-sm animate-pulse">
+                    Please sign the request in your wallet
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-gray-300">
+                  You need to purchase this video to watch.
+                </p>
+                <Button onClick={handleBuy} disabled={isBuying}>
+                  {isBuying
+                    ? "Buying..."
+                    : `Buy Access (${
+                        Number(fields.price) / 1_000_000_000
+                      } SUI)`}
+                </Button>
+              </div>
+            )}
             {error && <p className="text-red-500 mt-2">{error}</p>}
           </div>
         ) : (

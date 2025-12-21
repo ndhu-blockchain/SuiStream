@@ -37,9 +37,33 @@ export default function VideosPage() {
     }
   );
 
+  // 查詢使用者擁有的 AccessPass
+  const { data: ownedObjects, refetch: refetchOwnedObjects } =
+    useSuiClientQuery(
+      "getOwnedObjects",
+      {
+        owner: currentAccount?.address || "",
+        filter: {
+          StructType: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::AccessPass`,
+        },
+        options: { showContent: true },
+      },
+      {
+        enabled: !!currentAccount,
+      }
+    );
+
   const [buyingId, setBuyingId] = useState<string | null>(null);
 
   if (isEventsPending) return <div className="p-8">Loading videos...</div>;
+
+  // 整理已購買的 Video ID
+  const purchasedVideoIds = new Set(
+    ownedObjects?.data.map((obj) => {
+      const content = obj.data?.content as any;
+      return content?.fields?.video_id;
+    })
+  );
 
   return (
     <div className="container mx-auto p-8">
@@ -59,12 +83,20 @@ export default function VideosPage() {
             ? `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${parsedJson.cover_blob_id}`
             : null;
 
+          const isCreator = currentAccount?.address === parsedJson.creator;
+          const isPurchased = purchasedVideoIds.has(videoId);
+          const isFree = price === 0;
+          const hasAccess = isCreator || isPurchased || isFree;
+
           return (
             <Card key={videoId}>
               <CardHeader>
                 <CardTitle>{title}</CardTitle>
                 <CardDescription>
                   Creator: {parsedJson.creator.slice(0, 6)}...
+                  {isCreator && (
+                    <span className="ml-2 text-green-600 font-bold">(You)</span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -80,7 +112,7 @@ export default function VideosPage() {
                   )}
                 </div>
                 <p className="font-bold text-lg">
-                  {price > 0 ? `${price} SUI` : "Free"}
+                  {isFree ? "Free" : `${price} SUI`}
                 </p>
               </CardContent>
               <CardFooter className="flex justify-between">
@@ -90,7 +122,11 @@ export default function VideosPage() {
                 >
                   View Details
                 </Button>
-                {price > 0 && (
+                {hasAccess ? (
+                  <Button disabled variant="secondary">
+                    {isCreator ? "Owner" : isFree ? "Free" : "Purchased"}
+                  </Button>
+                ) : (
                   <Button
                     onClick={async () => {
                       if (!currentAccount) return;
@@ -102,6 +138,7 @@ export default function VideosPage() {
                           signAndExecuteTransaction
                         );
                         alert("Purchase Successful!");
+                        refetchOwnedObjects();
                       } catch (e) {
                         console.error(e);
                         alert("Purchase Failed");
@@ -109,7 +146,7 @@ export default function VideosPage() {
                         setBuyingId(null);
                       }
                     }}
-                    disabled={buyingId === videoId}
+                    disabled={buyingId === videoId || !currentAccount}
                   >
                     {buyingId === videoId ? "Buying..." : "Buy Access"}
                   </Button>
@@ -122,4 +159,5 @@ export default function VideosPage() {
     </div>
   );
 }
+
 export { VideosPage };

@@ -7,20 +7,19 @@ import { SealClient } from "@mysten/seal";
 import { fromHex, toHex } from "@mysten/sui/utils";
 
 // =================================================================
-// 1. 設定區 (根據你剛剛的部署結果填入)
-// =================================================================
+// 1. 設定
 
 const NETWORK = "testnet";
 
-// [Mock DEX Package ID] (舊的 Package，用於 Swap)
+// Mock DEX Package ID
 const MOCK_DEX_PACKAGE_ID =
   "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
 
-// [Video Platform Package ID] (新的 Package，包含 Seal 支援)
+// Video Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
   "0x7825c610d457f78b2d989d63b993dfd383801577be59931a740d27e17e4949a8";
 
-// [你的 Mock Dex Bank ID] (剛剛存錢進去的那個 Shared Object ID)
+// Mock Dex Bank ID
 const MOCK_DEX_BANK_ID =
   "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
 
@@ -28,19 +27,16 @@ const MOCK_DEX_BANK_ID =
 const WAL_COIN_TYPE =
   "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
 
-// Walrus Publisher (負責接收實體檔案)
+// Walrus Publisher
 const WALRUS_PUBLISHER_URL = "https://publisher.walrus-testnet.walrus.space";
 
 // 初始化 Client
 export const suiClient = new SuiClient({ url: getFullnodeUrl(NETWORK) });
 
 // =================================================================
-// 2. 輔助函式
-// =================================================================
+// 2. 函式
 
-/**
- * 將檔案上傳至 Walrus Publisher (HTTP PUT)
- */
+// 將檔案上傳至 Walrus Publisher (HTTP PUT)
 async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
   // 處理 Uint8Array 轉 Blob 的型別問題
   const body =
@@ -67,12 +63,10 @@ async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
     realBlobId = data.alreadyCertified.blobId;
   }
 
-  return realBlobId || blobId; // 如果解析失敗，回傳原本的 (雖然可能是錯的)
+  return realBlobId || blobId; // 如果解析失敗，回傳原本的
 }
 
-/**
- * 使用 Seal 加密 AES Key
- */
+// 使用 Seal 加密 AES Key
 async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
   const client = new SealClient({
     suiClient,
@@ -92,7 +86,7 @@ async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
   });
 
   const { encryptedObject } = await client.encrypt({
-    threshold: 1, // 測試網使用 1 即可
+    threshold: 1,
     packageId: VIDEO_PLATFORM_PACKAGE_ID,
     id: toHex(sealId),
     data: aesKey,
@@ -101,17 +95,14 @@ async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
   return encryptedObject;
 }
 
-/**
- * 模擬生成 Blob ID (在真實 Walrus SDK 中這會是 Multihash)
- */
+// 模擬生成 Blob ID
 const generateMockId = (prefix: string) => {
   // 產生一個隨機的 Base64Url 字串模擬 Blob ID
   return `${prefix}_${Math.random().toString(36).substring(7)}_${Date.now()}`;
 };
 
 // =================================================================
-// 3. 核心流程：SUI 換匯 -> 支付 -> 上傳 -> 寫入合約
-// =================================================================
+// 3. 流程：SUI 換匯 -> 支付 -> 上傳 -> 寫入合約
 
 export async function uploadVideoAssetsFlow(
   assets: {
@@ -133,7 +124,7 @@ export async function uploadVideoAssetsFlow(
   const encryptedKey = await encryptKeyWithSeal(assets.aesKey, sealId);
   console.log("Key Encrypted. Size:", encryptedKey.length);
 
-  // --- 0.1 上傳所有檔案到 Walrus (優先獲取真實 ID) ---
+  // --- 0.1 上傳所有檔案到 Walrus ---
   console.log("Uploading Assets to Walrus...");
 
   // 1. Upload Video First to get Blob ID
@@ -164,7 +155,7 @@ export async function uploadVideoAssetsFlow(
     cover: realCoverBlobId,
   });
 
-  // --- A. 計算費用 (前端估算) ---
+  // --- A. 計算費用 (估算) ---
   const EPOCHS = 1; // 測試用：降低 Epochs
   const PRICE_PER_BYTE = 1; // 測試用：降低費率以配合 Mock DEX 流動性
 
@@ -231,9 +222,7 @@ export async function uploadVideoAssetsFlow(
   return result;
 }
 
-/**
- * 購買影片
- */
+// 購買影片
 export async function buyVideo(
   video: { id: string; price: number },
   account: string,

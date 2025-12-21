@@ -70,11 +70,11 @@ sui client objects
 
 ```bash
 sui client call \
-  --package <MOCK_DEX_PACKAGE_ID> \
+  --package 0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091 \
   --module mock_dex \
   --function deposit_token \
-  --type-args <WAL_COIN_TYPE> \
-  --args <BANK_ID> <WAL_COIN_OBJECT_ID> \
+  --type-args 0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL \
+  --args 0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd <WAL_COIN_OBJECT_ID> \
   --gas-budget 10000000
 ```
 
