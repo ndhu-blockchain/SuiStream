@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useParams } from "react-router-dom";
 import {
   useSuiClientQuery,
@@ -12,7 +13,6 @@ import { suiClient, VIDEO_PLATFORM_PACKAGE_ID, buyVideo } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
-import { bcs } from "@mysten/sui/bcs";
 import Hls from "hls.js";
 
 // 實作一個簡單的 PublicKey Adapter
@@ -37,7 +37,9 @@ class SimplePublicKey extends PublicKey {
   }
 
   async verify(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _data: Uint8Array,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _signature: Uint8Array | string
   ): Promise<boolean> {
     // 這裡我們不需要真的實作驗證，因為 Seal SDK 只是要拿 Public Key

@@ -28,7 +28,7 @@ async function reEncodingSplitVideo(
   console.debug("Starting FFmpeg splitting (copy mode)...");
   setStatusText("Splitting...");
 
-  ffmpegInstance.on("progress", ({ progress, time }) => {
+  ffmpegInstance.on("progress", ({ progress }) => {
     const percentage = 5 + progress * 35; // Map 0-1 to 5-40%
     setProgress(Math.round(percentage));
   });
@@ -139,7 +139,7 @@ async function reEncodingSplitVideo(
   console.debug("Temporary files cleaned up.");
 
   const coverData = await ffmpegInstance.readFile("cover.png");
-  const coverFile = new File([coverData as any], "cover.png", {
+  const coverFile = new File([coverData], "cover.png", {
     type: "image/png",
   });
   ffmpegInstance.deleteFile("cover.png");
@@ -172,7 +172,7 @@ async function aesEncryptSegments(
   console.debug("Generated AES-128 key:", new Uint8Array(rawKey));
 
   let processedCount = 0;
-  for (let segment of segments) {
+  for (const segment of segments) {
     processedCount++;
     setStatusText(`Encrypting segment ${processedCount}/${segments.length}...`);
     const percentage = 40 + (processedCount / segments.length) * 50;
@@ -227,7 +227,7 @@ async function mergeTSGenerateM3U8(
   m3u8Content += `#EXT-X-KEY:METHOD=AES-128,URI="video.key"\n`;
 
   let byteOffset = 0;
-  for (let segment of segments) {
+  for (const segment of segments) {
     const segmentSize = segment.data.length;
     mergedData.set(segment.data, byteOffset);
 

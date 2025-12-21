@@ -1,10 +1,15 @@
 const SUI_COIN_TYPE = "0x2::sui::SUI";
 const MIST_PER_SUI = 1_000_000_000;
 
-import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
+import {
+  getFullnodeUrl,
+  SuiClient,
+  SuiTransactionBlockResponse,
+  SuiTransactionBlockResponseOptions,
+} from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 import { SealClient } from "@mysten/seal";
-import { fromHex, toHex } from "@mysten/sui/utils";
+import { toHex } from "@mysten/sui/utils";
 
 // =================================================================
 // 1. 設定
@@ -39,8 +44,7 @@ export const suiClient = new SuiClient({ url: getFullnodeUrl(NETWORK) });
 // 將檔案上傳至 Walrus Publisher (HTTP PUT)
 async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
   // 處理 Uint8Array 轉 Blob 的型別問題
-  const body =
-    content instanceof Uint8Array ? new Blob([content as any]) : content;
+  const body = content instanceof Uint8Array ? new Blob([content]) : content;
 
   const response = await fetch(`${WALRUS_PUBLISHER_URL}/v1/blobs?epochs=2`, {
     method: "PUT",
@@ -113,7 +117,10 @@ export async function uploadVideoAssetsFlow(
   },
   metadata: { title: string; description: string; price: number },
   account: string,
-  signAndExecuteTransaction: any,
+  signAndExecuteTransaction: (input: {
+    transaction: Transaction;
+    options?: SuiTransactionBlockResponseOptions;
+  }) => Promise<SuiTransactionBlockResponse>,
   onStatusUpdate?: (status: string) => void
 ) {
   const tx = new Transaction();
@@ -233,7 +240,10 @@ export async function uploadVideoAssetsFlow(
 export async function buyVideo(
   video: { id: string; price: number },
   account: string,
-  signAndExecuteTransaction: any
+  signAndExecuteTransaction: (input: {
+    transaction: Transaction;
+    options?: SuiTransactionBlockResponseOptions;
+  }) => Promise<SuiTransactionBlockResponse>
 ) {
   const tx = new Transaction();
 

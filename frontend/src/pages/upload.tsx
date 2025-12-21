@@ -2,9 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { ffmpegInstance } from "@/lib/ffmpeg";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
 import {
   reEncodingSplitVideo,
   aesEncryptSegments,
@@ -47,7 +46,6 @@ export default function UploadPage() {
     useState<number>(0);
   const [videoProcessingText, setVideoProcessingText] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [encryptedSegments, setEncryptedSegments] = useState<any[]>([]);
   const [mergedVideo, setMergedVideo] = useState<Uint8Array | null>(null);
   const [aesKey, setAesKey] = useState<Uint8Array | null>(null);
   const [m3u8Content, setM3u8Content] = useState<string>("");
@@ -64,7 +62,6 @@ export default function UploadPage() {
     setVideoProcessingProgress(0);
     setVideoProcessingText("");
     setErrorMessage("");
-    setEncryptedSegments([]);
     setMergedVideo(null);
     setAesKey(null);
     setM3u8Content("");
@@ -117,7 +114,6 @@ export default function UploadPage() {
       setErrorMessage(err.message || "Video encryption failed");
       throw err;
     });
-    setEncryptedSegments(encryptedData.segments);
     setAesKey(encryptedData.key);
     setVideoProcessingProgress(90);
     setVideoProcessingText("Segments encrypted");
