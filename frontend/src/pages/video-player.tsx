@@ -64,7 +64,7 @@ class SimplePublicKey extends PublicKey {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _signature: Uint8Array | string
   ): Promise<boolean> {
-    // 這裡我們不需要真的實作驗證，因為 Seal SDK 只是要拿 Public Key
+    // 不實作驗證 Seal SDK 只是要拿 Public Key
     return true;
   }
 
@@ -86,13 +86,13 @@ export default function VideoPlayerPage() {
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
 
-  // 1. 獲取影片 Metadata (從鏈上物件)
+  // 取影片 Metadata 鏈上
   const { data: videoObject, isPending } = useSuiClientQuery("getObject", {
     id: id!,
     options: { showContent: true },
   });
 
-  // 2. 查詢使用者擁有的 AccessPass
+  // 查使用者有的 AccessPass
   const { data: ownedObjects, refetch: refetchOwnedObjects } =
     useSuiClientQuery(
       "getOwnedObjects",
@@ -120,27 +120,26 @@ export default function VideoPlayerPage() {
 
     const initPlayer = async () => {
       if (Hls.isSupported()) {
-        // 1. Fetch M3U8
+        // 取 M3U8
         const m3u8Url = `${WALRUS_AGGREGATOR_URL}${m3u8BlobId}`;
         try {
           const response = await fetch(m3u8Url);
           if (!response.ok) throw new Error("Failed to fetch m3u8");
           let m3u8Text = await response.text();
 
-          // 2. Modify M3U8: Remove Encryption Tag
+          // 改 M3U8 移除加密標籤
           m3u8Text = m3u8Text.replace(
             /#EXT-X-KEY:METHOD=AES-128,URI="video.key"\n/g,
             ""
           );
 
-          // 3. Find the video URL from the M3U8 content
-          // The M3U8 should contain the full Walrus URL now (since we embedded it during upload)
+          // 從 M3U8 內容中找到影片 URL
+          // M3U8 應該包含完整的 Walrus URL 上傳過程中嵌入
           const videoUrlMatch = m3u8Text.match(WALRUS_AGGREGATOR_FORMAT);
           const videoUrl = videoUrlMatch ? videoUrlMatch[0] : "";
 
           if (!videoUrl) {
             console.error("Could not find video URL in M3U8");
-            // Fallback or error handling
           }
 
           const hls = new Hls({
@@ -180,7 +179,7 @@ export default function VideoPlayerPage() {
                         );
                       }
 
-                      // Decrypt: [IV (16 bytes)] [Encrypted Data]
+                      // 解密: [IV (16 bytes)] [Encrypted Data]
                       const iv = encryptedChunk.slice(0, 16);
                       const data = encryptedChunk.slice(16);
 
@@ -296,7 +295,7 @@ export default function VideoPlayerPage() {
       console.log("Seal ID (Hex):", toHex(sealId));
 
       setStatusText("Checking access...");
-      // 1. Check for AccessPass
+      // 查使用者有的 AccessPass
       const accessPasses = await suiClient.getOwnedObjects({
         owner: currentAccount.address,
         filter: {
@@ -310,7 +309,7 @@ export default function VideoPlayerPage() {
         return content.fields.video_id === id;
       });
 
-      // If creator, they can also play (using seal_approve)
+      // 如是創作者本人也算有權限
       const isCreator = fields.creator === currentAccount.address;
 
       if (!pass && !isCreator) {
@@ -318,7 +317,7 @@ export default function VideoPlayerPage() {
       }
 
       setStatusText("Building transaction...");
-      // 2. Build Transaction for Authorization
+      // 建立授權交易
       const tx = new Transaction();
 
       // 使用標準方式傳遞 vector<u8>
@@ -343,16 +342,16 @@ export default function VideoPlayerPage() {
       tx.setSender(currentAccount.address);
       tx.setGasBudget(20000000);
 
-      // 移除手動 Gas Payment，讓 SDK 自動處理
+      // 移除手動 Gas Payment 讓 SDK 自己處理
       // 但保留 sender 設定
 
       // 檢查 Transaction Data 結構
       const txData = await tx.getData();
       console.log("Transaction Data JSON:", JSON.stringify(txData, null, 2));
 
-      // 重要：Seal SDK 需要的是 BCS 序列化後的 TransactionData
+      // Seal SDK 需要的是 BCS 序列化後的 TransactionData?
       // tx.build() 回傳的就是這個 Uint8Array
-      // 根據文件，必須設定 onlyTransactionKind: true
+      // 文件說要設定 onlyTransactionKind: true
       const txBytes = await tx.build({
         client: suiClient,
         onlyTransactionKind: true,
@@ -361,7 +360,7 @@ export default function VideoPlayerPage() {
 
       setStatusText("Fetching Encrypted Key from Walrus...");
       console.log("Fetching Encrypted Key from Walrus...", keyBlobId);
-      // 3. Fetch Encrypted Key
+      // 取加密的 Key
       const response = await fetch(`${WALRUS_AGGREGATOR_URL}${keyBlobId}`);
       if (!response.ok) throw new Error("Failed to fetch key from Walrus");
       const encryptedKey = new Uint8Array(await response.arrayBuffer());
@@ -371,7 +370,7 @@ export default function VideoPlayerPage() {
       const signerAdapter = {
         signPersonalMessage: async (message: Uint8Array) => {
           setStatusText("Please sign the request in your wallet");
-          // Seal SDK 傳入的是 Uint8Array (bytes)，而不是物件
+          // Seal SDK 傳入的是 Uint8Array (bytes) 而不是物件
           const res = await signPersonalMessage({ message });
           setStatusText("Verifying signature...");
 
@@ -472,7 +471,7 @@ export default function VideoPlayerPage() {
   return (
     <div className="min-h-screen w-full bg-background pb-20">
       <div className="container mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Player Area */}
+        {/* 影片播放器區 */}
         <div className="mx-auto w-full max-w-5xl">
           <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black shadow-2xl ring-1 ring-white/10">
             {!decryptedKey ? (
@@ -486,7 +485,7 @@ export default function VideoPlayerPage() {
                           You have access to this video.
                         </p>
                       </div>
-                      {/* Status Text Area - Always visible space to prevent layout shift */}
+                      {/* 狀態文字區 */}
                       {isDecrypting && statusText && (
                         <div className="w-full">
                           <p className="animate-pulse text-sm font-medium text-primary-foreground">
@@ -576,10 +575,9 @@ export default function VideoPlayerPage() {
             )}
           </div>
         </div>
-
         {/* Info Area */}
         <div className="mx-auto mt-8 grid max-w-5xl gap-8">
-          {/* Left: Title, Desc */}
+          {/* 資訊區 */}
           <div className="space-y-6 lg:col-span-2">
             <div>
               <h1 className="wrap-break-word text-3xl font-bold leading-tight tracking-tighter md:text-4xl">
@@ -600,9 +598,7 @@ export default function VideoPlayerPage() {
                 </div>
               </div>
             </div>
-
             <Separator />
-
             <div className="space-y-4">
               <h3 className="text-xl font-semibold">Description</h3>
               <div className="prose prose-zinc max-w-none dark:prose-invert">
@@ -612,7 +608,6 @@ export default function VideoPlayerPage() {
               </div>
             </div>
           </div>
-
           {/* Right: Meta Card */}
           <div className="lg:col-span-1">
             <Card>
@@ -631,7 +626,6 @@ export default function VideoPlayerPage() {
                       : `${Number(fields.price) / MIST_PER_SUI} SUI`}
                   </span>
                 </div>
-
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Status</span>
                   {hasAccess ? (
@@ -646,9 +640,7 @@ export default function VideoPlayerPage() {
                     </span>
                   )}
                 </div>
-
                 <Separator />
-
                 <div className="space-y-2">
                   <span className="text-sm font-medium">Video ID</span>
                   <code className="block w-full break-all rounded bg-muted p-2 text-xs text-muted-foreground">

@@ -41,15 +41,18 @@ async function reEncodingSplitVideo(
     "-i",
     inputFileName,
     "-c:v",
+    // 不重新編碼
     "copy",
+    // 重編成 h264(很慢)
+    // "libx264",
     "-c:a",
     "aac",
     "-hls_time",
     splitDuration.toString(),
     "-hls_list_size",
-    "0", // 0 代表保留所有片段在 m3u8 中，避免只保留最後幾個片段
+    "0", // 0 代表保留所有片段在 m3u8 中 避免只保留最後幾個片段
     "-hls_segment_filename",
-    outputPattern, // 確保格式如 "segment_%03d.ts"
+    outputPattern, // 格式如 "segment_%03d.ts"
     "-f",
     "hls",
     "output.m3u8",
@@ -157,7 +160,7 @@ async function aesEncryptSegments(
   setProgress: (progress: number) => void,
   setStatusText: (text: string) => void
 ): Promise<{ segments: VideoSegment[]; key: Uint8Array }> {
-  // 產生一 AES-128 加密金鑰逐一加密每個 .ts 檔案
+  // 產生 AES-128 加密金鑰逐一加密每個 .ts 檔案
   // 回傳加密後的片段與金鑰
   const cryptoKey = await window.crypto.subtle.generateKey(
     {
