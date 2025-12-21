@@ -39,8 +39,10 @@ async function reEncodingSplitVideo(
   const ret = await ffmpegInstance.exec([
     "-i",
     inputFileName,
-    "-c",
+    "-c:v",
     "copy",
+    "-c:a",
+    "aac",
     "-hls_time",
     splitDuration.toString(),
     "-hls_list_size",
