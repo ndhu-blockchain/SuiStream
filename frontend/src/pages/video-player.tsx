@@ -263,9 +263,11 @@ export default function VideoPlayerPage() {
         { id: id!, price },
         currentAccount.address,
         signAndExecuteTransaction
-      );
+      ).then(async (result) => {
+        await suiClient.waitForTransaction({ digest: result.digest });
+      });
       toast.success("Purchase Successful!");
-      refetchOwnedObjects();
+      await refetchOwnedObjects();
     } catch (e: any) {
       console.error(e);
       toast.error("Purchase Failed: " + e.message);

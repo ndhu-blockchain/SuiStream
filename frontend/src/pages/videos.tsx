@@ -11,7 +11,7 @@ import {
   useSignAndExecuteTransaction,
   useSuiClientQuery,
 } from "@mysten/dapp-kit";
-import { buyVideo, VIDEO_PLATFORM_PACKAGE_ID } from "@/lib/sui";
+import { buyVideo, VIDEO_PLATFORM_PACKAGE_ID, suiClient } from "@/lib/sui";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -186,13 +186,16 @@ export default function VideosPage() {
                         if (!currentAccount) return;
                         setBuyingId(videoId);
                         try {
-                          await buyVideo(
+                          const result = await buyVideo(
                             { id: videoId, price: Number(parsedJson.price) },
                             currentAccount.address,
                             signAndExecuteTransaction
                           );
+                          await suiClient.waitForTransaction({
+                            digest: result.digest,
+                          });
                           toast.success("Purchase Successful!");
-                          refetchOwnedObjects();
+                          await refetchOwnedObjects();
                         } catch (e) {
                           console.error(e);
                           toast.error("Purchase Failed");
