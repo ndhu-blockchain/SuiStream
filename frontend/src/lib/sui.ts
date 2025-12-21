@@ -9,7 +9,6 @@ import {
 import { Transaction } from "@mysten/sui/transactions";
 import { SealClient } from "@mysten/seal";
 import { toHex } from "@mysten/sui/utils";
-import { seal } from "node_modules/@mysten/seal/dist/esm/client";
 
 // =================================================================
 // 1. 設定

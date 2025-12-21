@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect, useRef } from "react";
-import { SealClient, SessionKey } from "@mysten/seal";
+import { SessionKey } from "@mysten/seal";
 import {
   suiClient,
   VIDEO_PLATFORM_PACKAGE_ID,
@@ -33,7 +33,6 @@ import {
   AlertCircle,
   CheckCircle2,
   User,
-  ShieldCheck,
   Coins,
   Film,
 } from "lucide-react";
