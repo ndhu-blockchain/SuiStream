@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import { useState, useRef } from "react";
 import { ffmpegInstance } from "@/lib/ffmpeg";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
@@ -11,8 +12,17 @@ import {
 } from "@/lib/video";
 import { bytesToDisplaySize } from "@/lib/conversion";
 import { Label } from "@radix-ui/react-dropdown-menu";
+import {
+  useCurrentAccount,
+  useSignAndExecuteTransaction,
+} from "@mysten/dapp-kit";
+import { uploadVideoAssetsFlow } from "@/lib/sui";
 
 export default function UploadPage() {
+  const currentAccount = useCurrentAccount();
+  const { mutateAsync: signAndExecuteTransaction } =
+    useSignAndExecuteTransaction();
+
   // 多種頁面狀態
   const [pageStatus, setPageStatus] = useState<
     | "waiting"
@@ -252,16 +262,46 @@ export default function UploadPage() {
           />
           {/* 按鈕：上傳至 Walrus / 重置 */}
           <Button
-            onClick={() => {
+            onClick={async () => {
+              if (
+                !mergedVideo ||
+                !m3u8Content ||
+                !videoCoverFile ||
+                !currentAccount
+              )
+                return;
+
               setPageStatus("uploadingWalrus");
-              // 上傳至 Walrus video.bin, video.m3u8, cover.png
+              try {
+                await uploadVideoAssetsFlow(
+                  {
+                    video: mergedVideo,
+                    m3u8: m3u8Content,
+                    cover: videoCoverFile,
+                  },
+                  {
+                    title: videoTitle,
+                    description: videoDescription,
+                  },
+                  currentAccount.address,
+                  signAndExecuteTransaction
+                );
+                setPageStatus("walrusUploadSuccess");
+              } catch (error) {
+                console.error("Upload failed:", error);
+                setErrorMessage(
+                  error instanceof Error ? error.message : "Upload failed"
+                );
+                setPageStatus("walrusUploadError");
+              }
             }}
             disabled={
               !mergedVideo ||
               !m3u8Content ||
               !aesKey ||
               !videoCoverFile ||
-              !videoTitle
+              !videoTitle ||
+              !currentAccount
             }
           >
             Upload to Walrus
@@ -272,6 +312,33 @@ export default function UploadPage() {
             }}
           >
             Reset
+          </Button>
+        </div>
+      )}
+      {pageStatus === "uploadingWalrus" && (
+        <div className="flex flex-col items-center gap-4">
+          <h1 className="text-2xl font-bold mb-4">Uploading to Walrus...</h1>
+          <p>Please approve the transaction in your wallet.</p>
+          <Spinner />
+        </div>
+      )}
+      {pageStatus === "walrusUploadSuccess" && (
+        <div className="flex flex-col items-center gap-4">
+          <h1 className="text-2xl font-bold mb-4 text-green-600">
+            Upload Successful!
+          </h1>
+          <p>Your video has been uploaded to Walrus and registered on Sui.</p>
+          <Button onClick={resetStates}>Upload Another Video</Button>
+        </div>
+      )}
+      {pageStatus === "walrusUploadError" && (
+        <div className="flex flex-col items-center gap-4">
+          <h1 className="text-2xl font-bold mb-4 text-red-600">
+            Upload Failed
+          </h1>
+          <p className="text-red-500">{errorMessage}</p>
+          <Button onClick={() => setPageStatus("coverSelected")}>
+            Try Again
           </Button>
         </div>
       )}

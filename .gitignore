@@ -1,6 +1,6 @@
 # Contracts
-build/*
-traces/*
+contracts/*/build/*
+contracts/*/traces/*
 .trace
 .coverage*
 
