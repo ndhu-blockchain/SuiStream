@@ -2,6 +2,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useState } from "react";
 import { ffmpegInstance } from "@/lib/ffmpeg";
 import {
@@ -213,121 +222,149 @@ export default function UploadPage() {
       {(pageStatus === "videoProcessSuccess" ||
         pageStatus === "waitingCover" ||
         pageStatus === "coverSelected") && (
-        <div className="flex flex-col items-center gap-4">
-          {/* 影片處理成功，列出 video and m3u8 file size */}
-          <h1 className="text-2xl font-bold mb-4">Processing Successful</h1>
-          <p>
-            Encrypted Video Size:{" "}
-            {mergedVideo ? bytesToDisplaySize(mergedVideo.length) : "N/A"}
-          </p>
-          <p>
-            M3U8 File Size:{" "}
-            {m3u8Content
-              ? bytesToDisplaySize(new TextEncoder().encode(m3u8Content).length)
-              : "N/A"}
-          </p>
-          {/* 顯示 cover */}
-          {videoCoverFile && (
-            <div className="flex flex-col items-center">
-              <h2 className="text-xl font-semibold mb-2">Selected Cover:</h2>
-              <img
-                src={URL.createObjectURL(videoCoverFile)}
-                alt="Video Cover"
-                className="max-w-xs max-h-64 object-contain border"
-              />
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardTitle>Video Details</CardTitle>
+            <CardDescription>
+              Review processing results and add metadata for your video.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">
+                  Encrypted Video Size
+                </span>
+                <span className="font-medium">
+                  {mergedVideo ? bytesToDisplaySize(mergedVideo.length) : "N/A"}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">M3U8 File Size</span>
+                <span className="font-medium">
+                  {m3u8Content
+                    ? bytesToDisplaySize(
+                        new TextEncoder().encode(m3u8Content).length
+                      )
+                    : "N/A"}
+                </span>
+              </div>
             </div>
-          )}
-          {/* 讓使用者上傳封面 */}
-          <Label className="text-lg font-medium">
-            Upload Cover Image (JPG/PNG)
-          </Label>
-          <Input
-            type="file"
-            accept=".jpg,.png"
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null;
-              setVideoCoverFile(file);
-              setPageStatus("coverSelected");
-            }}
-          />
-          <Label className="text-lg font-medium">Video Title</Label>
-          <Input
-            type="text"
-            value={videoTitle}
-            onChange={(e) => setVideoTitle(e.target.value)}
-            placeholder="Enter video title"
-          />
-          <Label className="text-lg font-medium">Video Description</Label>
-          <Input
-            type="text"
-            value={videoDescription}
-            onChange={(e) => setVideoDescription(e.target.value)}
-            placeholder="Enter video description"
-          />
-          <Label className="text-lg font-medium">Price (SUI)</Label>
-          <Input
-            type="number"
-            value={videoPrice}
-            onChange={(e) => setVideoPrice(Number(e.target.value))}
-            placeholder="Enter video price in SUI"
-          />
-          {/* 按鈕：上傳至 Walrus / 重置 */}
-          <Button
-            onClick={async () => {
-              if (
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="cover-upload">Cover Image</Label>
+                {videoCoverFile && (
+                  <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-muted">
+                    <img
+                      src={URL.createObjectURL(videoCoverFile)}
+                      alt="Video Cover"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
+                <Input
+                  id="cover-upload"
+                  type="file"
+                  accept=".jpg,.png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setVideoCoverFile(file);
+                    setPageStatus("coverSelected");
+                  }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="video-title">Video Title</Label>
+                <Input
+                  id="video-title"
+                  type="text"
+                  value={videoTitle}
+                  onChange={(e) => setVideoTitle(e.target.value)}
+                  placeholder="Enter video title"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="video-description">Video Description</Label>
+                <Input
+                  id="video-description"
+                  type="text"
+                  value={videoDescription}
+                  onChange={(e) => setVideoDescription(e.target.value)}
+                  placeholder="Enter video description"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="video-price">Price (SUI)</Label>
+                <Input
+                  id="video-price"
+                  type="number"
+                  value={videoPrice}
+                  onChange={(e) => setVideoPrice(Number(e.target.value))}
+                  placeholder="Enter video price in SUI"
+                />
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={resetStates}>
+              Reset
+            </Button>
+            <Button
+              onClick={async () => {
+                if (
+                  !mergedVideo ||
+                  !m3u8Content ||
+                  !videoCoverFile ||
+                  !currentAccount
+                )
+                  return;
+
+                setPageStatus("uploadingWalrus");
+                try {
+                  await uploadVideoAssetsFlow(
+                    {
+                      video: mergedVideo,
+                      m3u8: m3u8Content,
+                      cover: videoCoverFile,
+                      aesKey: aesKey!,
+                    },
+                    {
+                      title: videoTitle,
+                      description: videoDescription,
+                      price: videoPrice * 1_000_000_000, // 轉為 MIST
+                    },
+                    currentAccount.address,
+                    signAndExecuteTransaction,
+                    (status) => setUploadStatusText(status)
+                  );
+                  setPageStatus("walrusUploadSuccess");
+                } catch (error) {
+                  console.error("Upload failed:", error);
+                  setErrorMessage(
+                    error instanceof Error ? error.message : "Upload failed"
+                  );
+                  setPageStatus("walrusUploadError");
+                }
+              }}
+              disabled={
                 !mergedVideo ||
                 !m3u8Content ||
+                !aesKey ||
                 !videoCoverFile ||
+                !videoTitle ||
                 !currentAccount
-              )
-                return;
-
-              setPageStatus("uploadingWalrus");
-              try {
-                await uploadVideoAssetsFlow(
-                  {
-                    video: mergedVideo,
-                    m3u8: m3u8Content,
-                    cover: videoCoverFile,
-                    aesKey: aesKey!,
-                  },
-                  {
-                    title: videoTitle,
-                    description: videoDescription,
-                    price: videoPrice * 1_000_000_000, // 轉為 MIST
-                  },
-                  currentAccount.address,
-                  signAndExecuteTransaction,
-                  (status) => setUploadStatusText(status)
-                );
-                setPageStatus("walrusUploadSuccess");
-              } catch (error) {
-                console.error("Upload failed:", error);
-                setErrorMessage(
-                  error instanceof Error ? error.message : "Upload failed"
-                );
-                setPageStatus("walrusUploadError");
               }
-            }}
-            disabled={
-              !mergedVideo ||
-              !m3u8Content ||
-              !aesKey ||
-              !videoCoverFile ||
-              !videoTitle ||
-              !currentAccount
-            }
-          >
-            Upload to Walrus
-          </Button>
-          <Button
-            onClick={() => {
-              resetStates();
-            }}
-          >
-            Reset
-          </Button>
-        </div>
+            >
+              Upload to Walrus
+            </Button>
+          </CardFooter>
+        </Card>
       )}
       {pageStatus === "uploadingWalrus" && (
         <div className="flex flex-col items-center gap-4">
