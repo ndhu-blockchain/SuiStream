@@ -27,17 +27,23 @@ export function AppLayout() {
             GitHub Repository
           </a>
         </Button>
-        <span className="flex flex-row items-center justify-center">
+        <span className="flex flex-wrap items-center justify-center">
           <p>Developed by</p>
-          <Button variant="link" className="px-1" asChild>
+          <Button variant="link" className="px-1 py-1" asChild>
             <a href="https://github.com/jhihyulin" target="_blank">
               Thomas Lin
             </a>
           </Button>
           &
-          <Button variant="link" className="px-1" asChild>
+          <Button variant="link" className="px-1 py-1" asChild>
             <a href="https://github.com/yilun9676" target="_blank">
               Alan Lee
+            </a>
+          </Button>
+          in
+          <Button variant="link" className="px-1 py-1" asChild>
+            <a href="https://ndhublockchain.club" target="_blank">
+              NDHU Blockchain Club
             </a>
           </Button>
         </span>
