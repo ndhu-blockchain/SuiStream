@@ -25,6 +25,7 @@ import {
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { MIST_PER_SUI, uploadVideoAssetsFlow } from "@/lib/sui";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function UploadPage() {
   const currentAccount = useCurrentAccount();
@@ -173,30 +174,48 @@ export default function UploadPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen">
       {(pageStatus === "waiting" || pageStatus === "videoSelected") && (
-        <div className="flex flex-col items-center gap-4">
-          {/* 等待使用者選擇影片並按下一步 */}
-          <h1 className="text-2xl font-bold mb-4">Select a Video</h1>
-          <Input
-            type="file"
-            accept=".mp4"
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null;
-              setVideoFile(file);
-              setPageStatus("videoSelected");
-            }}
-          />
-          <Button
-            disabled={!videoFile}
-            onClick={() => {
-              // 取得影片
-              if (!videoFile) return;
-              // 開始處理影片
-              videoProcess(videoFile);
-            }}
-          >
-            Next
-          </Button>
-        </div>
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Select a Video</CardTitle>
+            <CardDescription>
+              Choose a video file to upload and process.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Input
+              type="file"
+              accept=".mp4"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setVideoFile(file);
+                setPageStatus("videoSelected");
+              }}
+            />
+            <div className="flex items-start gap-3">
+              <Checkbox />
+              <div className="grid gap-2">
+                <Label>Public Video (NOT IMPL)</Label>
+                <p className="text-muted-foreground text-sm">
+                  Video will be public access (Unencrypted).
+                </p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button
+              className="w-full"
+              disabled={!videoFile}
+              onClick={() => {
+                // 取得影片
+                if (!videoFile) return;
+                // 開始處理影片
+                videoProcess(videoFile);
+              }}
+            >
+              Next
+            </Button>
+          </CardFooter>
+        </Card>
       )}
       {pageStatus === "videoProcessing" && (
         <div className="flex flex-col items-center gap-4">
