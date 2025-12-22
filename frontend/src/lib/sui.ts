@@ -169,10 +169,10 @@ export async function uploadVideoAssetsFlow(
   const realVideoBlobId = await uploadToWalrus(assets.video, tempVidName);
   console.log("Video Uploaded:", realVideoBlobId);
 
-  // 改 M3U8 指向真實 Blob
-  const videoUrl = `${WALRUS_AGGREGATOR_URL}${realVideoBlobId}`;
-  const modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
-  const m3u8Bytes = new TextEncoder().encode(modifiedM3u8);
+  // 不改 M3U8 指向真實 Blob，維持 video.bin
+  // const videoUrl = `${WALRUS_AGGREGATOR_URL}${realVideoBlobId}`;
+  // const modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
+  const m3u8Bytes = new TextEncoder().encode(assets.m3u8);
 
   // 上傳其他檔案
   onStatusUpdate?.("Uploading Metadata to Walrus...");

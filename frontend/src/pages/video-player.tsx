@@ -115,6 +115,7 @@ export default function VideoPlayerPage() {
     const content = videoObject.data?.content as any;
     const fields = content.fields;
     const m3u8BlobId = fields.m3u8_blob_id;
+    const videoBlobId = fields.video_blob_id;
 
     const initPlayer = async () => {
       if (Hls.isSupported()) {
@@ -157,6 +158,13 @@ export default function VideoPlayerPage() {
                     }
                     return;
                   }
+
+                  // 攔截 video.bin 請求並重導向到 Walrus
+                  if (context.url.includes("video.bin")) {
+                    // console.log("[CustomLoader] Intercepting video.bin request");
+                    context.url = `${WALRUS_AGGREGATOR_URL}${videoBlobId}`;
+                  }
+
                   // 其他請求 (m3u8, segments) 走預設載入邏輯
                   load(context, config, callbacks);
                 };
