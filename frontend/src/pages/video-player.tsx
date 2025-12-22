@@ -18,7 +18,6 @@ import {
   buyVideo,
   MIST_PER_SUI,
   WALRUS_AGGREGATOR_URL,
-  WALRUS_AGGREGATOR_FORMAT,
   sealClient,
 } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
@@ -127,21 +126,6 @@ export default function VideoPlayerPage() {
           if (!response.ok) throw new Error("Failed to fetch m3u8");
           let m3u8Text = await response.text();
 
-          // 改 M3U8 移除加密標籤
-          m3u8Text = m3u8Text.replace(
-            /#EXT-X-KEY:METHOD=AES-128,URI="video.key"\n/g,
-            ""
-          );
-
-          // 從 M3U8 內容中找到影片 URL
-          // M3U8 應該包含完整的 Walrus URL 上傳過程中嵌入
-          const videoUrlMatch = m3u8Text.match(WALRUS_AGGREGATOR_FORMAT);
-          const videoUrl = videoUrlMatch ? videoUrlMatch[0] : "";
-
-          if (!videoUrl) {
-            console.error("Could not find video URL in M3U8");
-          }
-
           const hls = new Hls({
             enableWorker: false,
             loader: class CustomLoader extends Hls.DefaultConfig.loader {
@@ -153,81 +137,29 @@ export default function VideoPlayerPage() {
                   config: any,
                   callbacks: any
                 ) => {
-                  if (context.url === videoUrl) {
-                    try {
-                      const fetchConfig = {
-                        headers: {} as any,
-                      };
-                      if (context.rangeStart !== undefined) {
-                        fetchConfig.headers[
-                          "Range"
-                        ] = `bytes=${context.rangeStart}-${context.rangeEnd}`;
-                      }
-
-                      const res = await fetch(context.url, fetchConfig);
-                      if (!res.ok) throw new Error("Failed to fetch segment");
-                      const buffer = await res.arrayBuffer();
-                      const encryptedChunk = new Uint8Array(buffer);
-
-                      console.log(
-                        `[CustomLoader] Fetched chunk: ${encryptedChunk.length} bytes. Range: ${context.rangeStart}-${context.rangeEnd}`
-                      );
-
-                      if (encryptedChunk.length < 17) {
-                        throw new Error(
-                          `Chunk too small: ${encryptedChunk.length}`
-                        );
-                      }
-
-                      // 解密: [IV (16 bytes)] [Encrypted Data]
-                      const iv = encryptedChunk.slice(0, 16);
-                      const data = encryptedChunk.slice(16);
-
-                      console.log(`[CustomLoader] IV: ${toHex(iv)}`);
-                      console.log(`[CustomLoader] Data size: ${data.length}`);
-
-                      let dataToDecrypt = data;
-                      if (data.length % 16 !== 0) {
-                        console.warn(
-                          `[CustomLoader] Warning: Data length (${data.length}) is not a multiple of 16! Decryption might fail.`
-                        );
-                        const newLength = data.length - (data.length % 16);
-                        console.warn(
-                          `[CustomLoader] Truncating to ${newLength} bytes.`
-                        );
-                        dataToDecrypt = data.slice(0, newLength);
-                      }
-
-                      const key = await window.crypto.subtle.importKey(
-                        "raw",
-                        decryptedKey as any,
-                        "AES-CBC",
-                        false,
-                        ["decrypt"]
-                      );
-
-                      const decryptedChunk = await window.crypto.subtle.decrypt(
-                        { name: "AES-CBC", iv: iv },
-                        key,
-                        dataToDecrypt
-                      );
-
-                      console.log(
-                        `[CustomLoader] Decryption successful! Decrypted size: ${decryptedChunk.byteLength}`
-                      );
-
+                  // 攔截 Key 請求並回傳已解密的 Key
+                  if (context.url.includes("video.key")) {
+                    console.log("[CustomLoader] Intercepting key request");
+                    if (decryptedKey) {
                       callbacks.onSuccess(
-                        { data: decryptedChunk, url: context.url },
+                        {
+                          data: decryptedKey.buffer,
+                          url: context.url,
+                        },
                         { url: context.url },
                         context
                       );
-                    } catch (err) {
-                      console.error("Segment load error:", err);
-                      callbacks.onError(err, context, context);
+                    } else {
+                      callbacks.onError(
+                        new Error("Key not available"),
+                        context,
+                        context
+                      );
                     }
-                  } else {
-                    load(context, config, callbacks);
+                    return;
                   }
+                  // 其他請求 (m3u8, segments) 走預設載入邏輯
+                  load(context, config, callbacks);
                 };
               }
             } as any,

@@ -5,6 +5,7 @@ interface VideoSegment {
   name: string;
   data: Uint8Array;
   duration: number;
+  iv?: Uint8Array;
 }
 
 async function reEncodingSplitVideo(
@@ -171,13 +172,13 @@ async function aesEncryptSegments(
     ["encrypt", "decrypt"]
   );
 
-  console.debug("Generated AES-128 crypto key:", cryptoKey);
+  // console.debug("Generated AES-128 crypto key:", cryptoKey);
 
   setStatusText("Encrypting segments...");
   setProgress(40);
 
   const rawKey = await window.crypto.subtle.exportKey("raw", cryptoKey);
-  console.debug("Generated AES-128 key:", new Uint8Array(rawKey));
+  // console.debug("Generated AES-128 key:", new Uint8Array(rawKey));
 
   let processedCount = 0;
   for (const segment of segments) {
@@ -202,14 +203,11 @@ async function aesEncryptSegments(
     console.debug(
       `Segment ${segment.name} encrypted size: ${encryptedData.byteLength}`
     );
-    // 將加密後的資料與 IV 組合起來存放
-    const encryptedArray = new Uint8Array(encryptedData);
-    const combinedData = new Uint8Array(iv.length + encryptedArray.length);
-    combinedData.set(iv, 0);
-    combinedData.set(encryptedArray, iv.length);
-    segment.data = combinedData;
+    // 將加密後的資料存回，並記錄 IV
+    segment.data = new Uint8Array(encryptedData);
+    segment.iv = iv;
     console.debug(
-      `Segment ${segment.name} encrypted, size: ${combinedData.length}`
+      `Segment ${segment.name} encrypted, size: ${segment.data.length}`
     );
   }
 
@@ -232,12 +230,18 @@ async function mergeTSGenerateM3U8(
   let m3u8Content = "#EXTM3U\n#EXT-X-VERSION:3\n";
   m3u8Content += `#EXT-X-TARGETDURATION:${Math.ceil(segmentDuration)}\n`;
   m3u8Content += "#EXT-X-MEDIA-SEQUENCE:0\n";
-  m3u8Content += `#EXT-X-KEY:METHOD=AES-128,URI="video.key"\n`;
 
   let byteOffset = 0;
   for (const segment of segments) {
     const segmentSize = segment.data.length;
     mergedData.set(segment.data, byteOffset);
+
+    if (segment.iv) {
+      const ivHex = Array.from(segment.iv)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      m3u8Content += `#EXT-X-KEY:METHOD=AES-128,URI="video.key",IV=0x${ivHex}\n`;
+    }
 
     m3u8Content += `#EXTINF:${segment.duration.toFixed(3)},\n`;
     m3u8Content += `#EXT-X-BYTERANGE:${segmentSize}@${byteOffset}\n`;
