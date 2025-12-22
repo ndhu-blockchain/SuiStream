@@ -18,7 +18,7 @@ const WAL_COIN_TYPE =
 
 // Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x77b982048922487be08578da59f9dfaa6888640700eb94f2252f22cbf772dd16";
+  "0x178f6055d47fd6ffb826c4542887a807b69662c4d3ec1ea5531a6cd1e6efc9db";
 
 // Mock DEX
 const MOCK_DEX_PACKAGE_ID =
@@ -243,6 +243,7 @@ export async function uploadVideoAssetsFlow(
       tx.pure.string(metadata.title),
       tx.pure.string(metadata.description),
       tx.pure.string(realM3u8BlobId), // 真實 M3U8 ID
+      tx.pure.string(realVideoBlobId), // 真實 Video ID
       tx.pure.string(realCoverBlobId), // 真實 Cover ID
       tx.pure.vector("u8", sealId), // 傳入 Seal ID
       tx.pure.string(realKeyBlobId), // 傳入真實的 Key Blob ID

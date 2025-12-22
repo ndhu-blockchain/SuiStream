@@ -15,6 +15,7 @@ public struct Video has key, store {
     title: String,
     description: String,
     m3u8_blob_id: String,
+    video_blob_id: String, // 影片檔案 Blob ID
     cover_blob_id: String, // 影片封面 Blob ID
     creator: address,
     seal_id: vector<u8>, // Seal 識別 ID (加密金鑰)
@@ -44,6 +45,7 @@ public entry fun create_video(
     title: String,
     description: String,
     m3u8_blob_id: String,
+    video_blob_id: String,
     cover_blob_id: String,
     seal_id: vector<u8>,
     key_blob_id: String,
@@ -57,6 +59,7 @@ public entry fun create_video(
         title: title,
         description: description,
         m3u8_blob_id: m3u8_blob_id,
+        video_blob_id: video_blob_id,
         cover_blob_id: cover_blob_id,
         creator: ctx.sender(),
         seal_id: seal_id,
