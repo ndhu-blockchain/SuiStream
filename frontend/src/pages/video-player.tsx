@@ -114,8 +114,7 @@ export default function VideoPlayerPage() {
 
     const content = videoObject.data?.content as any;
     const fields = content.fields;
-    // Use ipfs_hash as m3u8_blob_id
-    const m3u8BlobId = fields.ipfs_hash;
+    const m3u8BlobId = fields.m3u8_blob_id;
 
     const initPlayer = async () => {
       if (Hls.isSupported()) {

@@ -14,7 +14,7 @@ public struct Video has key, store {
     id: UID,
     title: String,
     description: String,
-    ipfs_hash: String,
+    m3u8_blob_id: String,
     cover_blob_id: String, // 影片封面 Blob ID
     creator: address,
     seal_id: vector<u8>, // Seal 識別 ID (加密金鑰)
@@ -43,7 +43,7 @@ public struct VideoPurchased has copy, drop {
 public entry fun create_video(
     title: String,
     description: String,
-    ipfs_hash: String,
+    m3u8_blob_id: String,
     cover_blob_id: String,
     seal_id: vector<u8>,
     key_blob_id: String,
@@ -56,7 +56,7 @@ public entry fun create_video(
         id,
         title: title,
         description: description,
-        ipfs_hash: ipfs_hash,
+        m3u8_blob_id: m3u8_blob_id,
         cover_blob_id: cover_blob_id,
         creator: ctx.sender(),
         seal_id: seal_id,
