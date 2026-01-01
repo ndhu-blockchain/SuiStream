@@ -13,18 +13,10 @@ import { toHex } from "@mysten/sui/utils";
 const NETWORK = "testnet";
 const MIST_PER_SUI = 1_000_000_000;
 const SUI_COIN_TYPE = "0x2::sui::SUI";
-const WAL_COIN_TYPE =
-  "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
 
 // Platform Package ID
 export const VIDEO_PLATFORM_PACKAGE_ID =
   "0x178f6055d47fd6ffb826c4542887a807b69662c4d3ec1ea5531a6cd1e6efc9db";
-
-// Mock DEX
-const MOCK_DEX_PACKAGE_ID =
-  "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
-const MOCK_DEX_BANK_ID =
-  "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
 
 // Walrus Aggregator
 export const WALRUS_AGGREGATOR_URL =
@@ -63,7 +55,7 @@ export const sealClient = new SealClient({
 // func
 
 // 檔案上傳 Walrus publisher
-async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
+async function uploadToWalrus(content: Uint8Array | File) {
   // 處理 Uint8Array 轉 Blob 的型別問題
   const body =
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,7 +85,11 @@ async function uploadToWalrus(content: Uint8Array | File, blobId: string) {
     realBlobId = data.alreadyCertified.blobId;
   }
 
-  return realBlobId || blobId; // 如果失敗回傳原本的
+  if (!realBlobId) {
+    throw new Error("Failed to get blob ID from response");
+  }
+
+  return realBlobId;
 }
 
 // 使用 Seal 加密 AES Key
@@ -125,12 +121,6 @@ async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
   return encryptedObject;
 }
 
-// 模擬生成 Blob ID
-const generateMockId = (prefix: string) => {
-  // 產生一個隨機的 Base64Url 字串模擬 Blob ID
-  return `${prefix}_${Math.random().toString(36).substring(7)}_${Date.now()}`;
-};
-
 // =================================================================
 // 流程 SUI 換匯 > 支付 > 上傳 > 寫合約
 
@@ -161,30 +151,31 @@ export async function uploadVideoAssetsFlow(
   console.log("Key Encrypted. Size:", encryptedKey.length);
 
   // 上傳所有檔案到 Walrus
-  onStatusUpdate?.("Uploading Video to Walrus...");
+  onStatusUpdate?.("Uploading Assets to Walrus...");
   console.log("Uploading Assets to Walrus...");
 
-  // 先上傳影片取 Blob ID
-  const tempVidName = generateMockId("video");
-  const realVideoBlobId = await uploadToWalrus(assets.video, tempVidName);
+  // 1. Upload Video
+  const realVideoBlobId = await uploadToWalrus(assets.video);
   console.log("Video Uploaded:", realVideoBlobId);
 
-  // 不改 M3U8 指向真實 Blob，維持 video.bin
-  // const videoUrl = `${WALRUS_AGGREGATOR_URL}${realVideoBlobId}`;
-  // const modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
-  const m3u8Bytes = new TextEncoder().encode(assets.m3u8);
+  // 2. Upload Key
+  const realKeyBlobId = await uploadToWalrus(encryptedKey);
+  console.log("Key Uploaded:", realKeyBlobId);
 
-  // 上傳其他檔案
-  onStatusUpdate?.("Uploading Metadata to Walrus...");
-  const tempKeyName = generateMockId("key");
-  const tempM3uName = generateMockId("m3u8");
-  const tempCovName = generateMockId("cover");
+  // 3. Upload Cover
+  const realCoverBlobId = await uploadToWalrus(assets.cover);
+  console.log("Cover Uploaded:", realCoverBlobId);
 
-  const [realKeyBlobId, realM3u8BlobId, realCoverBlobId] = await Promise.all([
-    uploadToWalrus(encryptedKey, tempKeyName),
-    uploadToWalrus(m3u8Bytes, tempM3uName),
-    uploadToWalrus(assets.cover, tempCovName),
-  ]);
+  // 4. Modify M3U8 and Upload
+  const videoUrl = `${WALRUS_AGGREGATOR_URL}${realVideoBlobId}`;
+  const keyUrl = `${WALRUS_AGGREGATOR_URL}${realKeyBlobId}`;
+
+  let modifiedM3u8 = assets.m3u8.replace(/video\.bin/g, videoUrl);
+  modifiedM3u8 = modifiedM3u8.replace(/video\.key/g, keyUrl);
+
+  const m3u8Bytes = new TextEncoder().encode(modifiedM3u8);
+  const realM3u8BlobId = await uploadToWalrus(m3u8Bytes);
+  console.log("M3U8 Uploaded:", realM3u8BlobId);
 
   console.log("Real Blob IDs:", {
     key: realKeyBlobId,
@@ -193,48 +184,8 @@ export async function uploadVideoAssetsFlow(
     cover: realCoverBlobId,
   });
 
-  // 費用估算
-  onStatusUpdate?.("Calculating Fees...");
-  const EPOCHS = 1; // 測試 降低 Epochs
-  const PRICE_PER_BYTE = 1; // 測試 降低費率
-
-  const sizeVideo = assets.video.length;
-  const sizeM3u8 = m3u8Bytes.length;
-  const sizeCover = assets.cover.size;
-  const sizeKey = encryptedKey.length;
-  const totalSize = sizeVideo + sizeM3u8 + sizeCover + sizeKey;
-
-  const totalWalNeeded = totalSize * EPOCHS * PRICE_PER_BYTE;
-
-  // 匯率: 我們的 Mock DEX 是 1 SUI = 0.5 WAL (即 2 SUI = 1 WAL)
-  // 所以 SUI = WAL * 2
-  // 加一點 buffer 避免浮點數誤差 但不要太多
-  // 降低 Buffer: 20,000,000 > 10,000,000 (約 5M WAL)
-  // TODO: 如果要上 mainnet 這裡需要處理
-  const totalSuiNeeded = Math.ceil(totalWalNeeded * 2) + 10000000;
-
-  console.log(
-    `[Fee Estimation] Size: ${totalSize}, WAL: ${totalWalNeeded}, SUI: ${totalSuiNeeded}`
-  );
-
   // PTB
   onStatusUpdate?.("Preparing Transaction...");
-
-  // 從 Gas Coin 切出 SUI
-  const [suiForSwap] = tx.splitCoins(tx.gas, [tx.pure.u64(totalSuiNeeded)]);
-
-  // 呼叫 Mock DEX (SUI > WAL)
-  const walCoin = tx.moveCall({
-    target: `${MOCK_DEX_PACKAGE_ID}::mock_dex::swap_sui_for_token`,
-    typeArguments: [WAL_COIN_TYPE],
-    arguments: [
-      tx.object(MOCK_DEX_BANK_ID), // bank obj
-      suiForSwap, // 剛剛切出來的 SUI
-    ],
-  });
-
-  // 付儲存費
-  tx.transferObjects([walCoin], account);
 
   // call SuiStream 合約記錄影片資訊
   tx.moveCall({
