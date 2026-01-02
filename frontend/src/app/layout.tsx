@@ -28,7 +28,7 @@ export function AppLayout() {
           </a>
         </Button>
         <span className="flex flex-wrap items-center justify-center">
-          <p>Developed by</p>
+          <p>Built by</p>
           <Button variant="link" className="px-1 py-1" asChild>
             <a href="https://github.com/jhihyulin" target="_blank">
               Thomas Lin
@@ -40,7 +40,7 @@ export function AppLayout() {
               Alan Lee
             </a>
           </Button>
-          in
+          @
           <Button variant="link" className="px-1 py-1" asChild>
             <a href="https://ndhublockchain.club" target="_blank">
               NDHU Blockchain Club
