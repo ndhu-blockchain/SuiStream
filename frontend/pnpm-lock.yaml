@@ -23,6 +23,12 @@ importers:
       '@mysten/sui':
         specifier: ^1.45.2
         version: 1.45.2(typescript@5.9.3)
+      '@mysten/walrus':
+        specifier: ^0.9.0
+        version: 0.9.0(typescript@5.9.3)
+      '@mysten/walrus-wasm':
+        specifier: ^0.2.0
+        version: 0.2.0
       '@radix-ui/react-checkbox':
         specifier: ^1.3.3
         version: 1.3.3(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -525,6 +531,12 @@ packages:
 
   '@mysten/wallet-standard@0.19.9':
     resolution: {integrity: sha512-jHFt+62os7x7y+4ZVMLck8WSanEO9b8deCD+VApUQkdAHA99TuxbREaujQTjnGQN5DaGEz8wQgeBPqxRY/vKQA==}
+
+  '@mysten/walrus-wasm@0.2.0':
+    resolution: {integrity: sha512-QYZoS6CIoFnVxqYClXkwgeoUjnNUyPdXwoD1Re4Xo/TVdXXmpH46akodNJ+e6egUSrjzHgeiRgfAuq57sDXGNA==}
+
+  '@mysten/walrus@0.9.0':
+    resolution: {integrity: sha512-rumbl5ThIIAAXn5SiMVlb7RZ2GZiqS14WfkseV/XCmgF3WhmpYqYoFWSvm1ou3/F7FdxrNWE5KF4982CR3zX4g==}
 
   '@mysten/window-wallet-core@0.1.1':
     resolution: {integrity: sha512-TboJvuqXvJbKy0sqK72kR3RXp7SLkgNfEaNsKWsSUwD+wV9+h/S3wtO+E+yFmPgHgOr8c7HJIQLAdunMssKZtg==}
@@ -1471,6 +1483,9 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+
+  dataloader@2.2.3:
+    resolution: {integrity: sha512-y2krtASINtPFS1rSDjacrFgn1dcUuoREVabwlOGOe4SdxenREqwjwjElAdwvbGM7kgZz9a3KVicWR7vcz8rnzA==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -2578,6 +2593,20 @@ snapshots:
       - '@gql.tada/vue-support'
       - typescript
 
+  '@mysten/walrus-wasm@0.2.0': {}
+
+  '@mysten/walrus@0.9.0(typescript@5.9.3)':
+    dependencies:
+      '@mysten/bcs': 1.9.2
+      '@mysten/sui': 1.45.2(typescript@5.9.3)
+      '@mysten/utils': 0.2.0
+      '@mysten/walrus-wasm': 0.2.0
+      dataloader: 2.2.3
+    transitivePeerDependencies:
+      - '@gql.tada/svelte-support'
+      - '@gql.tada/vue-support'
+      - typescript
+
   '@mysten/window-wallet-core@0.1.1(typescript@5.9.3)':
     dependencies:
       '@mysten/utils': 0.2.0
@@ -3444,6 +3473,8 @@ snapshots:
   cssesc@3.0.0: {}
 
   csstype@3.2.3: {}
+
+  dataloader@2.2.3: {}
 
   debug@4.4.3:
     dependencies:
