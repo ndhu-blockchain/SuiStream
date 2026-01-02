@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ffmpegInstance } from "@/lib/ffmpeg";
 import {
   reEncodingSplitVideo,
@@ -44,6 +45,7 @@ export function UploadPage() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
+  const navigate = useNavigate();
 
   // 頁面狀態
   // - waiting / videoSelected：選檔階段
@@ -75,6 +77,7 @@ export function UploadPage() {
   const [videoDescription, setVideoDescription] = useState<string>("");
   const [videoPrice, setVideoPrice] = useState<number>(0);
   const [uploadStatusText, setUploadStatusText] = useState<string>("");
+  const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
 
   const resetStates = () => {
     setPageStatus("waiting");
@@ -90,6 +93,7 @@ export function UploadPage() {
     setVideoDescription("");
     setVideoPrice(0);
     setUploadStatusText("");
+    setUploadedVideoId(null);
   };
 
   const videoProcess = async (videoFile: File) => {
@@ -322,7 +326,7 @@ export function UploadPage() {
                 setPageStatus("uploadingWalrus");
                 try {
                   // 進入上鏈上傳流程：register → upload-relay → certify
-                  await uploadVideoAssetsFlow(
+                  const result = await uploadVideoAssetsFlow(
                     {
                       video: mergedVideo,
                       m3u8: m3u8Content,
@@ -339,6 +343,7 @@ export function UploadPage() {
                     signAndExecuteTransaction,
                     (status) => setUploadStatusText(status)
                   );
+                  setUploadedVideoId(result.videoObjectId);
                   setPageStatus("walrusUploadSuccess");
                 } catch (error) {
                   console.error("Upload failed:", error);
@@ -375,6 +380,15 @@ export function UploadPage() {
             Upload Successful!
           </h1>
           <p>Your video has been uploaded to Walrus and registered on Sui.</p>
+          {uploadedVideoId ? (
+            <Button onClick={() => navigate(`/video/${uploadedVideoId}`)}>
+              Go to Video
+            </Button>
+          ) : (
+            <p className="text-muted-foreground">
+              Uploaded, but failed to extract Video object id.
+            </p>
+          )}
           <Button onClick={resetStates}>Upload Another Video</Button>
         </div>
       )}

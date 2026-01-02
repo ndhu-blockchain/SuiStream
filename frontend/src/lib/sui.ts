@@ -104,9 +104,20 @@ function getCreatedObjectsByTypeFromObjectChanges(
   >[number];
   type CreatedChange = Extract<ObjectChange, { type: "created" }>;
 
+  const isTypeMatch = (actualType: string, expectedType: string) => {
+    if (actualType === expectedType) return true;
+    // Sui 的 objectType 可能帶泛型後綴：`${expected}<...>`
+    // 例如 `0x...::module::Struct<0x2::sui::SUI>`
+    return (
+      actualType.startsWith(expectedType) &&
+      actualType.length > expectedType.length &&
+      actualType[expectedType.length] === "<"
+    );
+  };
+
   return objectChanges
     .filter((c): c is CreatedChange => c.type === "created")
-    .filter((c) => c.objectType === objectType)
+    .filter((c) => isTypeMatch(c.objectType, objectType))
     .map((c) => c.objectId);
 }
 
