@@ -357,7 +357,7 @@ export async function uploadVideoAssetsFlow(
 
   // mock_dex 匯率：WAL = SUI / 2（兩者都是 9 decimals）
   // 加 buffer 避免四捨五入/價格漂移導致 WAL 不足。
-  // TODO: 改成從 mock_dex 查詢實際匯率
+  // TODO: DEX Pool -> 改成從 mock_dex 查詢實際匯率
   const totalSuiToSwap =
     (totalWalNeeded * 2n * (10_000n + WAL_SWAP_BUFFER_BPS)) / 10_000n + 1n;
 
@@ -372,7 +372,7 @@ export async function uploadVideoAssetsFlow(
 
   // 取得 WAL 在同一筆 tx 用 mock_dex swap SUI->WAL
   // 產生的 Coin<WAL> 會當作 walCoin 傳進每一次 register
-  // TODO: 改成實際 dex pool
+  // TODO: DEX Pool -> 改成實際 dex pool
   onStatusUpdate?.("Swapping SUI -> WAL (mock_dex)...");
   const [suiForWal] = registerTx.splitCoins(registerTx.gas, [
     registerTx.pure.u64(totalSuiToSwap),
