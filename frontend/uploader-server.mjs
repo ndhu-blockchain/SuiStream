@@ -251,8 +251,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`uploader server listening on http://localhost:${PORT}`);
-  // eslint-disable-next-line no-console
   console.log(`uploader address: ${keypair.getPublicKey().toSuiAddress()}`);
 });

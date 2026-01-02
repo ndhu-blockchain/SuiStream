@@ -17,18 +17,15 @@ const NETWORK = "testnet";
 const MIST_PER_SUI = 1_000_000_000;
 const SUI_COIN_TYPE = "0x2::sui::SUI";
 
-// Mock DEX (WAL source)
-// Provided by user deployment on testnet.
+// Mock DEX (＄WAL)
 const MOCK_DEX_PACKAGE_ID =
   "0x048124ed3fe7405b210ea4f28f2d20590749fe65af58dc1e3779f0c6ebd6d091";
 const MOCK_DEX_BANK_ID =
   "0x77ce005108e30bde1385cbd2c416bd45cfff59c372ad4da16dae026471fbd0dd";
-// Official Walrus WAL coin type on testnet.
-// Must match the token type used by the mock DEX bank liquidity.
 const WAL_COIN_TYPE =
   "0x8270feb7375eee355e64fdb69c50abb6b5f9393a722883c1cf45f8e26048810a::wal::WAL";
 
-// Platform Package ID
+// 部屬合約 pkg id
 export const VIDEO_PLATFORM_PACKAGE_ID =
   "0x178f6055d47fd6ffb826c4542887a807b69662c4d3ec1ea5531a6cd1e6efc9db";
 
@@ -38,23 +35,18 @@ export const WALRUS_AGGREGATOR_URL =
 export const WALRUS_AGGREGATOR_FORMAT =
   /(https:\/\/aggregator\.walrus-testnet\.walrus\.space\/v1\/blobs\/[a-zA-Z0-9_-]+)/;
 
-// Walrus Publisher
-// (Not used) We intentionally do NOT use the publisher flow.
-
-// Walrus Upload Relay (for browser uploads; avoids per-node TLS / availability issues)
-// Can be overridden via Vite env: VITE_WALRUS_UPLOAD_RELAY_HOST
-const WALRUS_UPLOAD_RELAY_HOST =
-  (import.meta as any).env?.VITE_WALRUS_UPLOAD_RELAY_HOST ||
-  "https://upload-relay.testnet.walrus.space";
-// Upload relay defaults to 30s; large video blobs can easily exceed this in browsers.
+// Walrus Upload Relay
+const WALRUS_UPLOAD_RELAY_HOST = "https://upload-relay.testnet.walrus.space";
+// Upload relay timeout
 const WALRUS_UPLOAD_RELAY_TIMEOUT_MS = 10 * 60_000;
 
 // Optional uploader server (recommended for browsers). When enabled, we will:
 // - register blobs owned by the uploader address
 // - let the uploader pay relay tips, upload, certify, and transfer blobs back to the user
 // Configure via Vite env: VITE_UPLOADER_SERVER_URL (e.g. "/uploader" when using Vite dev proxy)
-const UPLOADER_SERVER_URL = (import.meta as any).env
-  ?.VITE_UPLOADER_SERVER_URL as string | undefined;
+const UPLOADER_SERVER_URL = import.meta.env.VITE_UPLOADER_SERVER_URL as
+  | string
+  | undefined;
 
 export const WALRUS_EPOCHS_MAX = 53;
 
@@ -79,14 +71,15 @@ function getCreatedObjectsByTypeFromObjectChanges(
   objectChanges: NonNullable<SuiTransactionBlockResponse["objectChanges"]>,
   objectType: string
 ): string[] {
-  return (
-    objectChanges
-      .filter((c) => c.type === "created")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((c: any) => c.objectType === objectType)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((c: any) => c.objectId)
-  );
+  type ObjectChange = NonNullable<
+    SuiTransactionBlockResponse["objectChanges"]
+  >[number];
+  type CreatedChange = Extract<ObjectChange, { type: "created" }>;
+
+  return objectChanges
+    .filter((c): c is CreatedChange => c.type === "created")
+    .filter((c) => c.objectType === objectType)
+    .map((c) => c.objectId);
 }
 
 async function getCreatedWalrusBlobObjectIdByBlobId(
@@ -232,7 +225,7 @@ async function uploadBlobViaUploaderServer(input: {
   });
 
   const text = await resp.text();
-  let json: any;
+  let json: unknown;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
@@ -247,11 +240,24 @@ async function uploadBlobViaUploaderServer(input: {
     );
   }
 
-  if (!json?.ok || !json?.tipTxDigest || !json?.certifyDigest) {
+  const parsed = json as
+    | { ok?: unknown; tipTxDigest?: unknown; certifyDigest?: unknown }
+    | null
+    | undefined;
+
+  if (
+    !parsed ||
+    parsed.ok !== true ||
+    typeof parsed.tipTxDigest !== "string" ||
+    typeof parsed.certifyDigest !== "string"
+  ) {
     throw new Error(`Uploader server unexpected response: ${text}`);
   }
 
-  return { tipTxDigest: json.tipTxDigest, certifyDigest: json.certifyDigest };
+  return {
+    tipTxDigest: parsed.tipTxDigest,
+    certifyDigest: parsed.certifyDigest,
+  };
 }
 
 async function buildUploadRelayAuthPayload(input: {
@@ -567,7 +573,6 @@ export async function uploadVideoAssetsFlow(
 
   if (isDebugWalrusRelayEnabled()) {
     if (useUploaderServer) {
-      // eslint-disable-next-line no-console
       console.log(
         "[walrus-relay-debug] uploader server enabled; skipping relay auth checks"
       );
@@ -579,15 +584,20 @@ export async function uploadVideoAssetsFlow(
         });
         // Sui RPC showInput returns structured inputs (arrays of numbers), not base64.
         // Compare against the actual bytes instead of string-searching JSON.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const inputs = (txWithInput as any)?.transaction?.data?.transaction
-          ?.inputs as Array<any> | undefined;
+        const inputs = (
+          txWithInput as unknown as {
+            transaction?: {
+              data?: { transaction?: { inputs?: unknown } };
+            };
+          }
+        )?.transaction?.data?.transaction?.inputs;
 
         const pureByteArrays: Uint8Array[] = [];
         if (Array.isArray(inputs)) {
           for (const inp of inputs) {
-            if (inp?.type === "pure" && Array.isArray(inp?.value)) {
-              pureByteArrays.push(new Uint8Array(inp.value));
+            const candidate = inp as { type?: unknown; value?: unknown };
+            if (candidate?.type === "pure" && Array.isArray(candidate?.value)) {
+              pureByteArrays.push(new Uint8Array(candidate.value));
             }
           }
         }
@@ -619,14 +629,12 @@ export async function uploadVideoAssetsFlow(
             );
           });
 
-          // eslint-disable-next-line no-console
           const expected = blob.label === RELAY_BLOB_LABEL;
           console.log(
             `[walrus-relay-debug] ${blob.label} blobId=${blob.blobId} authInTx=${authInTx} expected=${expected}`
           );
         }
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.warn("[walrus-relay-debug] failed to fetch tx input", e);
       }
     }

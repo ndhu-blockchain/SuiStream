@@ -124,7 +124,7 @@ export default function VideoPlayerPage() {
         try {
           const response = await fetch(m3u8Url);
           if (!response.ok) throw new Error("Failed to fetch m3u8");
-          let m3u8Text = await response.text();
+          const m3u8Text = await response.text();
           console.log("Fetched M3U8:", m3u8Text);
 
           const hls = new Hls({

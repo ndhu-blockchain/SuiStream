@@ -25,9 +25,8 @@ import {
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { MIST_PER_SUI, uploadVideoAssetsFlow } from "@/lib/sui";
-import { Checkbox } from "@/components/ui/checkbox";
 
-export default function UploadPage() {
+export function UploadPage() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
@@ -39,17 +38,9 @@ export default function UploadPage() {
     | "videoProcessing"
     | "videoProcessSuccess"
     | "videoProcessError"
-    | "waitingCover"
-    | "coverSelected"
     | "uploadingWalrus"
     | "walrusUploadSuccess"
     | "walrusUploadError"
-    | "uploadingSeal"
-    | "sealUploadSuccess"
-    | "sealUploadError"
-    | "contractCalling"
-    | "contractCallSuccess"
-    | "contractCallError"
   >("waiting");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoProcessingProgress, setVideoProcessingProgress] =
@@ -147,28 +138,6 @@ export default function UploadPage() {
     setVideoProcessingProgress(100);
     setVideoProcessingText("M3U8 generated");
     setPageStatus("videoProcessSuccess");
-    // 測試用 download video.bin video.m3u8 video.key cover.png
-    // const downloadFile = (data: Uint8Array, filename: string) => {
-    //   const blob = new Blob([data as any]);
-    //   const url = URL.createObjectURL(blob);
-    //   const a = document.createElement("a");
-    //   a.href = url;
-    //   a.download = filename;
-    //   a.click();
-    //   URL.revokeObjectURL(url);
-    // };
-    // downloadFile(mergedData, "video.bin");
-    // downloadFile(
-    //   new Uint8Array(m3u8Content.split("").map((c) => c.charCodeAt(0))),
-    //   "video.m3u8"
-    // );
-    // downloadFile(encryptedData.key, "video.key");
-    // downloadFile(
-    //   new Uint8Array(
-    //     coverFile ? await coverFile.arrayBuffer() : new Uint8Array()
-    //   ),
-    //   "cover.png"
-    // );
   };
 
   return (
@@ -191,15 +160,6 @@ export default function UploadPage() {
                 setPageStatus("videoSelected");
               }}
             />
-            <div className="flex items-start gap-3">
-              <Checkbox />
-              <div className="grid gap-2">
-                <Label>Public Video (NOT IMPL)</Label>
-                <p className="text-muted-foreground text-sm">
-                  Video will be public access (Unencrypted).
-                </p>
-              </div>
-            </div>
           </CardContent>
           <CardFooter>
             <Button
@@ -238,9 +198,7 @@ export default function UploadPage() {
           </Button>
         </div>
       )}
-      {(pageStatus === "videoProcessSuccess" ||
-        pageStatus === "waitingCover" ||
-        pageStatus === "coverSelected") && (
+      {pageStatus === "videoProcessSuccess" && (
         <Card className="w-full max-w-2xl">
           <CardHeader>
             <CardTitle>Video Details</CardTitle>
@@ -291,7 +249,6 @@ export default function UploadPage() {
                   onChange={(e) => {
                     const file = e.target.files?.[0] ?? null;
                     setVideoCoverFile(file);
-                    setPageStatus("coverSelected");
                   }}
                 />
               </div>
@@ -336,13 +293,12 @@ export default function UploadPage() {
             </Button>
             <Button
               onClick={async () => {
-                if (
-                  !mergedVideo ||
-                  !m3u8Content ||
-                  !videoCoverFile ||
-                  !currentAccount
-                )
-                  return;
+                if (!mergedVideo) return;
+                if (!m3u8Content) return;
+                if (!aesKey) return;
+                if (!videoCoverFile) return;
+                if (!videoTitle) return;
+                if (!currentAccount) return;
 
                 setPageStatus("uploadingWalrus");
                 try {
@@ -351,7 +307,7 @@ export default function UploadPage() {
                       video: mergedVideo,
                       m3u8: m3u8Content,
                       cover: videoCoverFile,
-                      aesKey: aesKey!,
+                      aesKey,
                     },
                     {
                       title: videoTitle,
@@ -407,7 +363,7 @@ export default function UploadPage() {
             Upload Failed
           </h1>
           <p className="text-red-500">{errorMessage}</p>
-          <Button onClick={() => setPageStatus("coverSelected")}>
+          <Button onClick={() => setPageStatus("videoProcessSuccess")}>
             Try Again
           </Button>
         </div>
@@ -415,5 +371,3 @@ export default function UploadPage() {
     </div>
   );
 }
-
-export { UploadPage };
