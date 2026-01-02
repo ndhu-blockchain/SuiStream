@@ -40,14 +40,6 @@ const WALRUS_UPLOAD_RELAY_HOST = "https://upload-relay.testnet.walrus.space";
 // Upload relay timeout
 const WALRUS_UPLOAD_RELAY_TIMEOUT_MS = 10 * 60_000;
 
-// Optional uploader server (recommended for browsers). When enabled, we will:
-// - register blobs owned by the uploader address
-// - let the uploader pay relay tips, upload, certify, and transfer blobs back to the user
-// Configure via Vite env: VITE_UPLOADER_SERVER_URL (e.g. "/uploader" when using Vite dev proxy)
-const UPLOADER_SERVER_URL = import.meta.env.VITE_UPLOADER_SERVER_URL as
-  | string
-  | undefined;
-
 export const WALRUS_EPOCHS_MAX = 53;
 
 const WALRUS_DEFAULT_EPOCHS = 2;
@@ -154,153 +146,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let uploaderAddressPromise: Promise<string> | null = null;
-
-async function getUploaderAddressOrThrow(): Promise<string> {
-  if (!UPLOADER_SERVER_URL) {
-    throw new Error("Uploader server is not configured");
-  }
-
-  if (!uploaderAddressPromise) {
-    uploaderAddressPromise = (async () => {
-      const resp = await fetch(`${UPLOADER_SERVER_URL}/healthz`);
-      if (!resp.ok) {
-        throw new Error(
-          `Uploader server health check failed: HTTP ${resp.status}`
-        );
-      }
-      const json = (await resp.json()) as { address?: string };
-      if (!json?.address) {
-        throw new Error("Uploader server healthz missing address");
-      }
-      return json.address;
-    })();
-  }
-
-  return uploaderAddressPromise;
-}
-
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-async function uploadBlobViaUploaderServer(input: {
-  blobId: string;
-  blobObjectId: string;
-  encodingType: EncodingType;
-  nonce: Uint8Array;
-  deletable: boolean;
-  userAddress: string;
-  bytes: Uint8Array;
-}): Promise<{ tipTxDigest: string; certifyDigest: string }> {
-  if (!UPLOADER_SERVER_URL) {
-    throw new Error("Uploader server is not configured");
-  }
-
-  const params = new URLSearchParams();
-  params.set("blob_id", input.blobId);
-  params.set("blob_object_id", input.blobObjectId);
-  params.set("encoding_type", String(input.encodingType));
-  params.set("nonce", base64UrlEncode(input.nonce));
-  params.set("user", input.userAddress);
-  params.set("deletable", String(input.deletable));
-
-  const url = `${UPLOADER_SERVER_URL}/v1/upload?${params.toString()}`;
-
-  // Ensure the Blob is backed by an ArrayBuffer (avoids TS/DOM typing issues with ArrayBufferLike).
-  const bodyBytes = new Uint8Array(input.bytes.byteLength);
-  bodyBytes.set(input.bytes);
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/octet-stream" },
-    body: new Blob([bodyBytes]),
-  });
-
-  const text = await resp.text();
-  let json: unknown;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
-
-  if (!resp.ok) {
-    throw new Error(
-      `Uploader server upload failed: HTTP ${resp.status} ${
-        text || resp.statusText
-      }`
-    );
-  }
-
-  const parsed = json as
-    | { ok?: unknown; tipTxDigest?: unknown; certifyDigest?: unknown }
-    | null
-    | undefined;
-
-  if (
-    !parsed ||
-    parsed.ok !== true ||
-    typeof parsed.tipTxDigest !== "string" ||
-    typeof parsed.certifyDigest !== "string"
-  ) {
-    throw new Error(`Uploader server unexpected response: ${text}`);
-  }
-
-  return {
-    tipTxDigest: parsed.tipTxDigest,
-    certifyDigest: parsed.certifyDigest,
-  };
-}
-
-async function buildUploadRelayAuthPayload(input: {
-  blobDigest: Uint8Array;
-  nonce: Uint8Array;
-  size: number;
-}): Promise<Uint8Array> {
-  const nonceBytes = new Uint8Array(input.nonce);
-  const nonceDigest = await crypto.subtle.digest(
-    "SHA-256",
-    nonceBytes as unknown as BufferSource
-  );
-  // u64 little-endian
-  const lengthBytes = new Uint8Array(8);
-  new DataView(lengthBytes.buffer).setBigUint64(0, BigInt(input.size), true);
-  const authPayload = new Uint8Array(
-    input.blobDigest.byteLength +
-      nonceDigest.byteLength +
-      lengthBytes.byteLength
-  );
-  authPayload.set(input.blobDigest, 0);
-  authPayload.set(new Uint8Array(nonceDigest), input.blobDigest.byteLength);
-  authPayload.set(
-    lengthBytes,
-    input.blobDigest.byteLength + nonceDigest.byteLength
-  );
-  return authPayload;
-}
-
-// (debug helper removed)
-
-function isDebugWalrusRelayEnabled() {
-  try {
-    // Toggle via DevTools: localStorage.setItem('DEBUG_WALRUS_RELAY','1')
-    return (
-      typeof window !== "undefined" &&
-      window.localStorage.getItem("DEBUG_WALRUS_RELAY") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
 function isLikelyTimeoutError(err: unknown) {
   // In browsers, AbortSignal.timeout may yield DOMException with name "TimeoutError".
   // Walrus SDK currently only maps AbortError; so we handle both.
@@ -394,11 +239,8 @@ export async function uploadVideoAssetsFlow(
   const deletable = true; // TODO: set based on your policy
   const owner = account;
 
-  const useUploaderServer = Boolean(UPLOADER_SERVER_URL);
-  const uploaderAddress = useUploaderServer
-    ? await getUploaderAddressOrThrow()
-    : null;
-  const walrusBlobOwner = uploaderAddress ?? owner;
+  // Always use the no-uploader flow.
+  const walrusBlobOwner = owner;
 
   // 1) Seal encrypt key
   onStatusUpdate?.("Encrypting AES Key with Seal...");
@@ -454,10 +296,6 @@ export async function uploadVideoAssetsFlow(
   const coverBlobId = encoded.find((b) => b.label === "cover")!.blobId;
   const keyBlobId = encoded.find((b) => b.label === "key")!.blobId;
 
-  // NOTE: The upload-relay flow is effectively 1 blob per txDigest.
-  // For multi-blob uploads in browsers, prefer enabling the uploader-server.
-  const RELAY_BLOB_LABEL: EncodedWalrusBlob["label"] = "video";
-
   // 3.5) Estimate WAL required for all register operations, then swap SUI->WAL via mock_dex
   // NOTE: Walrus register consumes WAL for BOTH storage reservation and write fee.
   onStatusUpdate?.("Estimating WAL costs...");
@@ -483,23 +321,6 @@ export async function uploadVideoAssetsFlow(
   onStatusUpdate?.("Building atomic transaction (PTB)...");
   const registerTx = new Transaction();
   registerTx.setSenderIfNotSet(owner);
-
-  // 4.0 Upload-relay auth + tip (SUI)
-  // - If using uploader-server, tips are paid server-side per blob.
-  // - Otherwise, we only include a relay tip for the largest blob.
-  if (!useUploaderServer) {
-    const relayBlob = encoded.find((b) => b.label === RELAY_BLOB_LABEL);
-    if (!relayBlob) {
-      throw new Error(`Missing relay blob label=${RELAY_BLOB_LABEL}`);
-    }
-    registerTx.add(
-      suiClient.walrus.sendUploadRelayTip({
-        size: relayBlob.bytes.length,
-        blobDigest: relayBlob.blobDigest,
-        nonce: relayBlob.nonce,
-      })
-    );
-  }
 
   // 4.1 WAL source: Swap SUI -> WAL via mock_dex in the SAME tx (C.1)
   // This produces a Coin<WAL> that we pass into Walrus register as `walCoin`.
@@ -571,193 +392,89 @@ export async function uploadVideoAssetsFlow(
     timeout: 60_000,
   });
 
-  if (isDebugWalrusRelayEnabled()) {
-    if (useUploaderServer) {
-      console.log(
-        "[walrus-relay-debug] uploader server enabled; skipping relay auth checks"
-      );
-    } else {
-      try {
-        const txWithInput = await suiClient.getTransactionBlock({
-          digest: registerDigest,
-          options: { showInput: true },
-        });
-        // Sui RPC showInput returns structured inputs (arrays of numbers), not base64.
-        // Compare against the actual bytes instead of string-searching JSON.
-        const inputs = (
-          txWithInput as unknown as {
-            transaction?: {
-              data?: { transaction?: { inputs?: unknown } };
-            };
-          }
-        )?.transaction?.data?.transaction?.inputs;
-
-        const pureByteArrays: Uint8Array[] = [];
-        if (Array.isArray(inputs)) {
-          for (const inp of inputs) {
-            const candidate = inp as { type?: unknown; value?: unknown };
-            if (candidate?.type === "pure" && Array.isArray(candidate?.value)) {
-              pureByteArrays.push(new Uint8Array(candidate.value));
-            }
-          }
-        }
-
-        for (const blob of encoded) {
-          const authPayload = await buildUploadRelayAuthPayload({
-            blobDigest: blob.blobDigest,
-            nonce: blob.nonce,
-            size: blob.bytes.length,
-          });
-
-          // Some builders store raw payload bytes (72). Others may store BCS(vector<u8>) bytes.
-          // Accept both to avoid false negatives in debug.
-          const bcsVectorU8 = new Uint8Array(authPayload.length + 1);
-          // ULEB128 for 72 fits in one byte.
-          bcsVectorU8[0] = authPayload.length;
-          bcsVectorU8.set(authPayload, 1);
-
-          const authInTx = pureByteArrays.some((candidate) => {
-            const equals = (a: Uint8Array, b: Uint8Array) => {
-              if (a.length !== b.length) return false;
-              for (let i = 0; i < a.length; i++) {
-                if (a[i] !== b[i]) return false;
-              }
-              return true;
-            };
-            return (
-              equals(candidate, authPayload) || equals(candidate, bcsVectorU8)
-            );
-          });
-
-          const expected = blob.label === RELAY_BLOB_LABEL;
-          console.log(
-            `[walrus-relay-debug] ${blob.label} blobId=${blob.blobId} authInTx=${authInTx} expected=${expected}`
-          );
-        }
-      } catch (e) {
-        console.warn("[walrus-relay-debug] failed to fetch tx input", e);
-      }
-    }
-  }
+  // NOTE: Upload-relay tips/auth are paid in per-blob transactions later.
 
   const registerObjectChanges = registerTxBlock.objectChanges ?? [];
 
   // 6) Upload bytes (off-chain) using the tx digest
   onStatusUpdate?.("Uploading blobs...");
   const certificateByBlobId = new Map<string, unknown>();
-  const confirmationsByBlobId = new Map<string, unknown>();
   const blobObjectIdByBlobId = new Map<string, string>();
+  const tipTxDigestByBlobId = new Map<string, string>();
 
   for (const blob of encoded) {
-    const usesRelay = !useUploaderServer && blob.label === RELAY_BLOB_LABEL;
-    onStatusUpdate?.(
-      `Uploading ${blob.label} (${
-        useUploaderServer
-          ? "uploader server"
-          : usesRelay
-          ? "upload relay"
-          : "storage nodes"
-      })...`
-    );
+    onStatusUpdate?.(`Preparing ${blob.label} for upload relay...`);
     const blobObjectId = await getCreatedWalrusBlobObjectIdByBlobId(
       registerObjectChanges,
       blob.blobId
     );
     blobObjectIdByBlobId.set(blob.blobId, blobObjectId);
 
+    // The upload relay verifies a (nonce hash, blob digest, size) auth payload inside the referenced tx.
+    // In practice, the relay expects one blob per txDigest; so we pay a dedicated tip/auth tx per blob.
+    onStatusUpdate?.(`Paying upload relay tip for ${blob.label}...`);
+    const tipTx = new Transaction();
+    tipTx.setSenderIfNotSet(owner);
+    tipTx.add(
+      suiClient.walrus.sendUploadRelayTip({
+        size: blob.bytes.length,
+        blobDigest: blob.blobDigest,
+        nonce: blob.nonce,
+      })
+    );
+    const tipResult = await signAndExecuteTransaction({
+      transaction: tipTx,
+      options: { showEffects: true },
+    });
+    const tipTxDigest: string = tipResult.digest;
+    tipTxDigestByBlobId.set(blob.blobId, tipTxDigest);
+
+    onStatusUpdate?.(`Waiting for tip tx (relay auth) for ${blob.label}...`);
+    await suiClient.waitForTransaction({
+      digest: tipTxDigest,
+      options: { showEffects: true },
+      timeout: 60_000,
+    });
+
     // Retry on timeout (no extra wallet prompts; this is purely HTTP)
     const maxAttempts = 3;
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        if (useUploaderServer) {
-          await uploadBlobViaUploaderServer({
-            blobId: blob.blobId,
-            blobObjectId,
-            encodingType: blob.encodingType,
-            nonce: blob.nonce,
-            deletable,
-            userAddress: owner,
-            bytes: blob.bytes,
-          });
-        } else if (usesRelay) {
-          const { certificate } = await suiClient.walrus.writeBlobToUploadRelay(
-            {
-              blobId: blob.blobId,
-              blob: blob.bytes,
-              nonce: blob.nonce,
-              txDigest: registerDigest,
-              blobObjectId,
-              deletable,
-              encodingType: blob.encodingType,
-            }
-          );
-          certificateByBlobId.set(blob.blobId, certificate);
-        } else {
-          const encodedForNodes = await suiClient.walrus.encodeBlob(blob.bytes);
-          if (encodedForNodes.blobId !== blob.blobId) {
-            throw new Error(
-              `encodeBlob blobId mismatch for ${blob.label}: expected=${blob.blobId} got=${encodedForNodes.blobId}`
-            );
-          }
-          const confirmations = await suiClient.walrus.writeEncodedBlobToNodes({
-            blobId: blob.blobId,
-            metadata: encodedForNodes.metadata,
-            sliversByNode: encodedForNodes.sliversByNode,
-            deletable,
-            objectId: blobObjectId,
-          });
-          confirmationsByBlobId.set(blob.blobId, confirmations);
-        }
+        onStatusUpdate?.(`Uploading ${blob.label} (upload relay)...`);
+        const { certificate } = await suiClient.walrus.writeBlobToUploadRelay({
+          blobId: blob.blobId,
+          blob: blob.bytes,
+          nonce: blob.nonce,
+          txDigest: tipTxDigest,
+          blobObjectId,
+          deletable,
+          encodingType: blob.encodingType,
+        });
+        certificateByBlobId.set(blob.blobId, certificate);
 
         lastError = undefined;
         break;
       } catch (e) {
         lastError = e;
-        if (!isLikelyTimeoutError(e) || attempt === maxAttempts) throw e;
+        const message = String(
+          (e as { message?: unknown } | null)?.message ?? ""
+        );
+        const shouldRetry =
+          isLikelyTimeoutError(e) ||
+          message.includes("401") ||
+          message.toLowerCase().includes("unauthorized") ||
+          message.toLowerCase().includes("nonce hash");
+
+        if (!shouldRetry || attempt === maxAttempts) throw e;
         onStatusUpdate?.(
-          `Upload timeout for ${blob.label}; retrying (${attempt}/${maxAttempts})...`
+          `Upload relay error for ${blob.label}; retrying (${attempt}/${maxAttempts})...`
         );
         await sleep(1000 * attempt * attempt);
       }
     }
 
     if (lastError) throw lastError;
-  }
-
-  if (useUploaderServer) {
-    // Uploader server already certifies each blob (and transfers ownership back).
-    // Best-effort: return created video object id from the register tx.
-    try {
-      const videoType = `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::Video`;
-      const createdVideos = getCreatedObjectsByTypeFromObjectChanges(
-        registerObjectChanges,
-        videoType
-      );
-      return {
-        digest: registerDigest,
-        videoObjectId: createdVideos[0] ?? null,
-        blobs: {
-          m3u8BlobId,
-          videoBlobId,
-          coverBlobId,
-          keyBlobId,
-        },
-        sealId,
-      };
-    } catch {
-      return {
-        digest: registerDigest,
-        videoObjectId: null,
-        blobs: {
-          m3u8BlobId,
-          videoBlobId,
-          coverBlobId,
-          keyBlobId,
-        },
-        sealId,
-      };
-    }
   }
 
   // 7) Certify (on-chain)
@@ -773,32 +490,20 @@ export async function uploadVideoAssetsFlow(
     }
 
     const certificate = certificateByBlobId.get(blob.blobId);
-    const confirmations = confirmationsByBlobId.get(blob.blobId);
-    if (!certificate && !confirmations) {
+    if (!certificate) {
       throw new Error(
-        `Missing upload proof (certificate/confirmations) for blobId=${blob.blobId}`
+        `Missing upload relay certificate for blobId=${blob.blobId}`
       );
     }
 
-    if (certificate) {
-      suiClient.walrus.certifyBlobTransaction({
-        transaction: certifyTx,
-        blobId: blob.blobId,
-        blobObjectId,
-        deletable,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        certificate: certificate as any,
-      });
-    } else {
-      suiClient.walrus.certifyBlobTransaction({
-        transaction: certifyTx,
-        blobId: blob.blobId,
-        blobObjectId,
-        deletable,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        confirmations: confirmations as any,
-      });
-    }
+    suiClient.walrus.certifyBlobTransaction({
+      transaction: certifyTx,
+      blobId: blob.blobId,
+      blobObjectId,
+      deletable,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      certificate: certificate as any,
+    });
   }
 
   await signAndExecuteTransaction({

@@ -11,17 +11,6 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  server: {
-    proxy: {
-      // Local uploader server (frontend/uploader-server.mjs)
-      // Use with: VITE_UPLOADER_SERVER_URL=/uploader
-      "/uploader": {
-        target: "http://localhost:8787",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/uploader/, ""),
-      },
-    },
-  },
   optimizeDeps: {
     exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/core"],
   },
