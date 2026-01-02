@@ -1,6 +1,19 @@
 import { fetchFile } from "@ffmpeg/util";
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 
+// ============================================================================
+// 影片前處理
+//
+// 目標
+// - 產出一個可被 HLS 播放器讀取的 m3u8，但「實際影片資料」會被合併成單一 blob：video.bin
+// - m3u8 透過 `#EXT-X-BYTERANGE` 指向 video.bin 的不同位移
+// - 加密使用 AES-128（AES-CBC）；每個 segment 使用獨立 IV，並在 m3u8 中為每段寫入 `#EXT-X-KEY`
+//
+// 搭配播放端
+// - m3u8 內的 key URI 固定為 "video.key"，播放端會攔截此請求並回傳「解密後的 key」
+// - m3u8 內的 media URI 固定為 "video.bin"，播放端會攔截並導向 Walrus Aggregator 的 video blob
+// ============================================================================
+
 interface VideoSegment {
   name: string;
   data: Uint8Array;
@@ -15,14 +28,15 @@ async function reEncodingSplitVideo(
   setProgress: (progress: number) => void,
   setStatusText: (text: string) => void
 ): Promise<{ segments: VideoSegment[]; coverFile: File }> {
-  // 重新編碼並切割為為 h264
-  // 切割為 splitDuration 秒一片段之 .ts 檔案
-  // 回傳所有片段檔案與m3u8播放清單檔案
-  // 取第一張影片封面作為縮圖
+  // 重新編碼/切割影片
+  // - 使用 FFmpeg.wasm 在瀏覽器端處理
+  // - 這裡用 HLS muxer 產生 `.ts` 片段與暫時的 `output.m3u8`
+  // - 我們最後不直接沿用 output.m3u8，而是「讀片段 + 片段時長」後自行生成 BYTERANGE m3u8
+  // - 同時抓取一張封面圖（thumbnail / cover）
   const inputFileName = "input.mp4";
   const outputPattern = "segment_%03d.ts";
 
-  // 寫入輸入影片
+  // 寫入輸入影片到 FFmpeg 虛擬檔案系統
   setStatusText("Writing file...");
   setProgress(5);
   await ffmpegInstance.writeFile(inputFileName, await fetchFile(videoFile));
@@ -35,9 +49,9 @@ async function reEncodingSplitVideo(
     setProgress(Math.round(percentage));
   });
 
-  // FFmpeg 不重新編碼 (Copy) 並分割成 .ts 片段
-  // 注意：使用 copy 模式時，切割點會受限於原始影片的關鍵影格 (Keyframe) 位置，
-  // 因此片段長度可能不會精確等於 splitDuration。
+  // FFmpeg 不重新編碼（Copy）並分割成 .ts 片段
+  // 注意（Note）：copy 模式的切割點受限於關鍵影格（keyframe），
+  // 因此實際片段時長可能不會精確等於 splitDuration。
   const ret = await ffmpegInstance.exec([
     "-i",
     inputFileName,
@@ -79,7 +93,7 @@ async function reEncodingSplitVideo(
 
   console.debug("FFmpeg processing completed.");
 
-  // 列出虛擬文件系統中的所有檔案
+  // 列出虛擬文件系統中的所有檔案（除錯用）
   setStatusText("Reading segments...");
   setProgress(40);
   try {
@@ -89,7 +103,10 @@ async function reEncodingSplitVideo(
     console.warn("Failed to list directory:", e);
   }
 
-  // 取 m3u8 播放清單
+  // 取暫時 m3u8 播放清單
+  // 我們只用它來：
+  // - 取片段檔名（segment_###.ts）
+  // - 取每段 EXTINF 時長
   const playlistData = await ffmpegInstance.readFile("output.m3u8");
   const playlist =
     typeof playlistData === "string"
@@ -98,7 +115,7 @@ async function reEncodingSplitVideo(
 
   console.debug("Generated playlist:", playlist);
 
-  // 解析 m3u8 提取片段時間和檔名
+  // 解析 m3u8 提取片段時間（EXTINF）
   const extinf = playlist.match(/#EXTINF:([\d.]+)/g) || [];
   const durations = extinf.map((line) =>
     parseFloat(line.replace("#EXTINF:", ""))
@@ -161,8 +178,10 @@ async function aesEncryptSegments(
   setProgress: (progress: number) => void,
   setStatusText: (text: string) => void
 ): Promise<{ segments: VideoSegment[]; key: Uint8Array }> {
-  // 產生 AES-128 加密金鑰逐一加密每個 .ts 檔案
-  // 回傳加密後的片段與金鑰
+  // 產生 AES-128 金鑰並逐段加密
+  // - HLS `METHOD=AES-128` 使用 16-byte key + CBC 模式（AES-CBC）
+  // - 每個 segment 使用獨立的隨機 IV
+  // - 回傳 raw key（Uint8Array, 16 bytes）與加密後片段（encrypted bytes + iv）
   const cryptoKey = await window.crypto.subtle.generateKey(
     {
       name: "AES-CBC",
@@ -187,7 +206,7 @@ async function aesEncryptSegments(
     const percentage = 40 + (processedCount / segments.length) * 50;
     setProgress(Math.round(percentage));
 
-    // 使用隨機 IV
+    // 使用隨機 IV（16 bytes）
     const iv = window.crypto.getRandomValues(new Uint8Array(16));
     console.debug(
       `Segment ${segment.name} raw size: ${segment.data.byteLength}`
@@ -220,7 +239,15 @@ async function mergeTSGenerateM3U8(
   setProgress: (progress: number) => void,
   setStatusText: (text: string) => void
 ): Promise<{ m3u8Content: string; mergedData: Uint8Array }> {
-  // 合併所有 TS 片段並產生對應的 byterange m3u8 播放清單檔案
+  // 合併所有片段並產生 BYTERANGE m3u8
+  //
+  // 為什麼要合併？
+  // - Walrus 對大量小檔（很多 segment）會增加註冊與上傳筆數，成本與簽名次數都會飆升
+  // - 因此我們把所有 segment 串成單一 `video.bin`，再用 `#EXT-X-BYTERANGE` 讓播放器按位移抓取
+  //
+  // 加密 key URI
+  // - m3u8 內的 `URI="video.key"` 是「占位符」（placeholder）
+  // - 播放端（video-player）會攔截 key 請求並回傳解密後的 AES key
   setStatusText("Generating m3u8 playlist...");
   setProgress(90);
 
@@ -237,6 +264,7 @@ async function mergeTSGenerateM3U8(
     mergedData.set(segment.data, byteOffset);
 
     if (segment.iv) {
+      // 每段寫一個 EXT-X-KEY，讓播放器對應使用不同 IV
       const ivHex = Array.from(segment.iv)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
@@ -244,6 +272,7 @@ async function mergeTSGenerateM3U8(
     }
 
     m3u8Content += `#EXTINF:${segment.duration.toFixed(3)},\n`;
+    // 透過 BYTERANGE 指向合併後的單一檔（video.bin）
     m3u8Content += `#EXT-X-BYTERANGE:${segmentSize}@${byteOffset}\n`;
     m3u8Content += `video.bin\n`;
     byteOffset += segmentSize;

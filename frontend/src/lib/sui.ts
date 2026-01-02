@@ -59,6 +59,23 @@ type EncodedWalrusBlob = {
   contentType?: string;
 };
 
+// ============================================================================
+// Walrus/Sui 上傳流程
+//
+// - 用 PTB 把 Walrus register + 合約 create_video 包起來
+// - 鏈上 metadata 指到的 blobId 一定已被 register（但 bytes 仍需後續 upload-relay 上傳）
+
+// - register 需要 WAL，因此在同一筆交易內先用 mock_dex 把 SUI swap 成 WAL
+// - register 完成後，再對每個 blob 走 upload-relay
+//   1 付 tip（產生 relay 需要的 auth payload / txDigest）
+//   2 HTTP 上傳 bytes（writeBlobToUploadRelay）
+// - 所有 blob 上傳完成後，再用 certifyTx 把 certificates 上鏈
+//
+// - blobId：Walrus 內容位址 / base64url 字串（SDK 回傳）
+// - blobObjectId：register 後在 Sui 上建立的 Blob 物件 id
+// - certificate：upload-relay 回傳的憑證，certify 時需要
+// ============================================================================
+
 function getCreatedObjectsByTypeFromObjectChanges(
   objectChanges: NonNullable<SuiTransactionBlockResponse["objectChanges"]>,
   objectType: string
@@ -90,7 +107,7 @@ async function getCreatedWalrusBlobObjectIdByBlobId(
 
   const expectedBlobIdU256 = blobIdToInt(blobId);
 
-  // Resolve which created Blob matches the expected blobId
+  // 找出哪個 created Blob 對應到指定 blobId
   for (const objectId of createdBlobObjectIds) {
     const obj = await suiClient.getObject({
       id: objectId,
@@ -101,8 +118,8 @@ async function getCreatedWalrusBlobObjectIdByBlobId(
     const content = obj.data?.content as any;
     const fields = content?.fields;
 
-    // Walrus stores `blob_id` on-chain as `u256` (stringified in Sui JSON),
-    // while `encodeBlob()` returns a base64url string blobId.
+    // Walrus 在鏈上把 blob_id 存成 u256
+    // 但 SDK 產生的 blobId 是 base64url 字串
     const onChainBlobId = fields?.blob_id ?? fields?.blobId;
     if (typeof onChainBlobId === "string") {
       try {
@@ -126,16 +143,18 @@ export const suiClient = new SuiClient({
   network: NETWORK,
 }).$extend(
   walrus({
-    // Ensure the Walrus WASM binary is fetched from a valid URL served by Vite
-    // (avoids SPA fallback returning HTML for the wasm request).
+    // 確保 Walrus WASM 從正確 URL 取得
+    // 避免 SPA fallback 回傳 HTML 造成 wasm load 失敗
     wasmUrl: walrusWasmUrl,
 
-    // Use the official testnet upload relay for off-chain uploads.
-    // This is required because direct-to-node uploads often fail in browsers due to TLS/cert issues.
+    // 使用官方 testnet upload relay 做代理上傳
+    // 瀏覽器直接對 Walrus node 請求會爆炸多
+    // 實測僅直接傳小檔 m3u8, cover, key 請求 12000+
+    // 且失敗率高
     uploadRelay: {
       host: WALRUS_UPLOAD_RELAY_HOST,
-      // Enable tipping so the SDK includes (tx_id, nonce) when uploading.
-      // We'll pay the tip in the SAME C.1 registerTx (single prompt for registerTx).
+      // 開啟 tipping
+      // 上傳時會帶上 txDigest, nonce 作為授權驗證
       sendTip: { max: 2_000 },
       timeout: WALRUS_UPLOAD_RELAY_TIMEOUT_MS,
     },
@@ -146,9 +165,10 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 偵測是否可能是 timeout 錯誤
 function isLikelyTimeoutError(err: unknown) {
-  // In browsers, AbortSignal.timeout may yield DOMException with name "TimeoutError".
-  // Walrus SDK currently only maps AbortError; so we handle both.
+  // AbortSignal.timeout 可能會產生 name TimeoutError 的 DOMException
+  // Walrus SDK 目前只處理 name AbortError 的錯誤，因此這裡兩種都判斷
   if (!err || typeof err !== "object") return false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyErr = err as any;
@@ -208,7 +228,7 @@ async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
   return encryptedObject;
 }
 
-// 上傳影片資產（C.1: 單筆 PTB 原子化 register + create_video，交易後再上傳 bytes）
+// 上傳影片資產 PTB register + create_video 交易後再上傳 bytes
 export async function uploadVideoAssetsFlow(
   assets: {
     video: Uint8Array;
@@ -226,38 +246,42 @@ export async function uploadVideoAssetsFlow(
   onStatusUpdate?: (status: string) => void
 ) {
   // =============================================================
-  // C.1 (Same PTB / Atomic register)
-  // - Encode blobs locally
-  // - Build ONE transaction:
-  //   1) (TODO) your Move PTB for WAL source / escrow / approve
-  //   2) register Walrus blobs (on-chain)
-  //   3) call your app contract to store metadata (create_video)
-  // - After digest: upload bytes to nodes
-  // - Then certify (optional but recommended)
+  // PTB
+  // - 先在本機計算每個 blob 的 metadata（blobId/rootHash/nonce/digest）
+  // - 建一筆交易把以下步驟綁在一起：
+  //   1 取得 WAL（mock_dex swap SUI->WAL）
+  //   2 register Walrus blobs（on-chain）
+  //   3 呼叫合約 create_video 把 metadata 寫鏈上 store app metadata
+  // - register 成功後透過 upload relay 上傳 bytes
+  // - 最後做 certify，讓 blob 可被安全引用/讀取
 
-  const epochs = WALRUS_DEFAULT_EPOCHS; // TODO: make configurable (u64)
-  const deletable = true; // TODO: set based on your policy
+  const epochs = WALRUS_DEFAULT_EPOCHS; // TODO: 可做成可調參數（u64）
+  const deletable = true; // TODO: 依政策決定是否可刪
   const owner = account;
-
-  // Always use the no-uploader flow.
   const walrusBlobOwner = owner;
 
-  // 1) Seal encrypt key
+  // 用 Seal 加密 AES key
+  // sealId 是 32 bytes 隨機 id，會一起寫入 app metadata 供播放端解密 key
   onStatusUpdate?.("Encrypting AES Key with Seal...");
   const sealId = new Uint8Array(32);
   crypto.getRandomValues(sealId);
   const encryptedKey = await encryptKeyWithSeal(assets.aesKey, sealId);
 
-  // 2) Prepare bytes for each blob
+  // 準備要上傳的 bytes
+  // - video：加密後的合併檔（video.bin）
+  // - m3u8：BYTERANGE 播放清單
+  // - cover：封面圖
+  // - key：Seal 加密後的 AES key（播放端拿到後再解密）
   onStatusUpdate?.("Preparing files...");
   const m3u8Bytes = new TextEncoder().encode(assets.m3u8);
   const coverBytes = new Uint8Array(await assets.cover.arrayBuffer());
 
-  // 3) Encode each blob (generates blobId + rootHash + slivers)
+  // 計算每個 blob 的 metadata（blobId/rootHash/nonce/digest）
+  // 只是產生後續 register/relay 需要的資料
   onStatusUpdate?.("Preparing Walrus metadata...");
   const encoded: EncodedWalrusBlob[] = [];
 
-  // Pin blob-metadata computation to a single shard count for consistency.
+  // 固定 shard 數以確保 metadata 計算一致
   const walrusSystemState = await suiClient.walrus.systemState();
   const numShards = walrusSystemState.committee.n_shards;
 
@@ -270,9 +294,9 @@ export async function uploadVideoAssetsFlow(
       bytes,
       numShards,
     });
-    // NOTE: The Walrus WASM layer may return Uint8Array views backed by shared WASM memory.
-    // To avoid subtle mutations across subsequent WASM calls (which can break upload-relay auth),
-    // eagerly materialize/copy all buffers we rely on later.
+    // Walrus WASM 可能回傳共享記憶體上的 Uint8Array view？
+    // 為避免後續 WASM 呼叫覆寫同一段 buffer 導致 relay 授權失敗
+    // 這裡把需要用到的 bytes 都立刻 copy/materialize。
     const blobDigestBytes = await result.blobDigest();
     encoded.push({
       label,
@@ -296,8 +320,7 @@ export async function uploadVideoAssetsFlow(
   const coverBlobId = encoded.find((b) => b.label === "cover")!.blobId;
   const keyBlobId = encoded.find((b) => b.label === "key")!.blobId;
 
-  // 3.5) Estimate WAL required for all register operations, then swap SUI->WAL via mock_dex
-  // NOTE: Walrus register consumes WAL for BOTH storage reservation and write fee.
+  // 估算 register 需要的 WAL，並準備在同一筆 tx 內 swap SUI->WAL
   onStatusUpdate?.("Estimating WAL costs...");
   let totalWalNeeded = 0n;
   for (const blob of encoded) {
@@ -308,8 +331,9 @@ export async function uploadVideoAssetsFlow(
     totalWalNeeded += totalCost;
   }
 
-  // mock_dex rate: WAL = SUI / 2  (both are 9 decimals)
-  // Add a small buffer to avoid rounding / price drift.
+  // mock_dex 匯率：WAL = SUI / 2（兩者都是 9 decimals）
+  // 加 buffer 避免四捨五入/價格漂移導致 WAL 不足。
+  // TODO: 改成從 mock_dex 查詢實際匯率
   const totalSuiToSwap =
     (totalWalNeeded * 2n * (10_000n + WAL_SWAP_BUFFER_BPS)) / 10_000n + 1n;
 
@@ -317,14 +341,14 @@ export async function uploadVideoAssetsFlow(
     `Estimated WAL needed: ${totalWalNeeded.toString()} (mist). Swapping SUI: ${totalSuiToSwap.toString()} (mist).`
   );
 
-  // 4) Build ONE transaction: (Move PTB) -> (register blobs) -> (create_video)
+  // 建一筆交易：swap → register blobs → create_video
   onStatusUpdate?.("Building atomic transaction (PTB)...");
   const registerTx = new Transaction();
   registerTx.setSenderIfNotSet(owner);
 
-  // 4.1 WAL source: Swap SUI -> WAL via mock_dex in the SAME tx (C.1)
-  // This produces a Coin<WAL> that we pass into Walrus register as `walCoin`.
-  // If you later move WAL sourcing into your own Move module, replace this block.
+  // 取得 WAL 在同一筆 tx 用 mock_dex swap SUI->WAL
+  // 產生的 Coin<WAL> 會當作 walCoin 傳進每一次 register
+  // TODO: 改成實際 dex pool
   onStatusUpdate?.("Swapping SUI -> WAL (mock_dex)...");
   const [suiForWal] = registerTx.splitCoins(registerTx.gas, [
     registerTx.pure.u64(totalSuiToSwap),
@@ -335,7 +359,7 @@ export async function uploadVideoAssetsFlow(
     arguments: [registerTx.object(MOCK_DEX_BANK_ID), suiForWal],
   });
 
-  // 4.2 Walrus register (on-chain) for each blob
+  // 對每個 blob 做 on-chain register
   for (const blob of encoded) {
     suiClient.walrus.registerBlobTransaction({
       transaction: registerTx,
@@ -352,11 +376,11 @@ export async function uploadVideoAssetsFlow(
     });
   }
 
-  // Walrus internally `splitCoins(walCoin, [amount])` for fees, leaving a remainder.
-  // Ensure the remainder is transferred, otherwise dry-run fails with UnusedValueWithoutDrop.
+  // Walrus 內部會對 walCoin 做 splitCoins 付費 會剩餘一些 WAL
+  // 必須把剩餘的 WAL 轉回 owner 否則 dry-run 會因 UnusedValueWithoutDrop 失敗
   registerTx.transferObjects([walCoin], owner);
 
-  // 4.3 App contract call: create video metadata on-chain
+  // 寫入 app metadata（create_video on-chain）
   registerTx.moveCall({
     target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::create_video`,
     arguments: [
@@ -371,7 +395,7 @@ export async function uploadVideoAssetsFlow(
     ],
   });
 
-  // 5) Execute register tx
+  // 執行 registerTx 需跳錢包簽名
   onStatusUpdate?.("Signing & executing register transaction...");
   const registerResult = await signAndExecuteTransaction({
     transaction: registerTx,
@@ -380,8 +404,8 @@ export async function uploadVideoAssetsFlow(
 
   const registerDigest: string = registerResult.digest;
 
-  // Important: wallet execution and our configured fullnode may differ.
-  // Wait until THIS fullnode can see the transaction, otherwise follow-up queries may 404.
+  // 錢包送出的節點與我們設定的 fullnode 可能不同
+  // 等到這個 RPC 也能查到交易避免後續查 objectChanges 404
   onStatusUpdate?.("Waiting for transaction to be available on RPC...");
   const registerTxBlock = await suiClient.waitForTransaction({
     digest: registerDigest,
@@ -392,11 +416,12 @@ export async function uploadVideoAssetsFlow(
     timeout: 60_000,
   });
 
-  // NOTE: Upload-relay tips/auth are paid in per-blob transactions later.
+  // upload-relay 的 tip/auth 會在後面每個 blob 一筆交易支付
 
   const registerObjectChanges = registerTxBlock.objectChanges ?? [];
 
-  // 6) Upload bytes (off-chain) using the tx digest
+  // 上傳 bytes（透過 upload relay）
+  // - 會對每個 blob：先付 tip（產生 auth txDigest）→ 再呼叫 writeBlobToUploadRelay（HTTP）
   onStatusUpdate?.("Uploading blobs...");
   const certificateByBlobId = new Map<string, unknown>();
   const blobObjectIdByBlobId = new Map<string, string>();
@@ -410,8 +435,9 @@ export async function uploadVideoAssetsFlow(
     );
     blobObjectIdByBlobId.set(blob.blobId, blobObjectId);
 
-    // The upload relay verifies a (nonce hash, blob digest, size) auth payload inside the referenced tx.
-    // In practice, the relay expects one blob per txDigest; so we pay a dedicated tip/auth tx per blob.
+    // upload-relay 會用 txDigest 內的（nonce hash, blob digest, size）作為授權驗證
+    // relay 一個 txDigest 對應一個 blob，因此我們每個 blob 都付一筆 tipTx
+    // TODO: 找方法把 4 個 blob 的 tip 包進 ptb
     onStatusUpdate?.(`Paying upload relay tip for ${blob.label}...`);
     const tipTx = new Transaction();
     tipTx.setSenderIfNotSet(owner);
@@ -436,7 +462,8 @@ export async function uploadVideoAssetsFlow(
       timeout: 60_000,
     });
 
-    // Retry on timeout (no extra wallet prompts; this is purely HTTP)
+    // 遇到 timeout/授權問題重試
+    // 不跳錢包簽名 純 HTTP upload
     const maxAttempts = 3;
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -477,8 +504,8 @@ export async function uploadVideoAssetsFlow(
     if (lastError) throw lastError;
   }
 
-  // 7) Certify (on-chain)
-  // NOTE: This is one additional wallet signature prompt after uploads finish.
+  // certify
+  // 會跳錢包簽名
   onStatusUpdate?.("Certifying blobs on-chain...");
   const certifyTx = new Transaction();
   certifyTx.setSenderIfNotSet(owner);
@@ -511,7 +538,7 @@ export async function uploadVideoAssetsFlow(
     options: { showEffects: true },
   });
 
-  // Optional: return created video object id (best-effort)
+  // 嘗試從 registerTx 的 objectChanges 找出 create_video 創的物件 id
   try {
     const videoType = `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::Video`;
     const createdVideos = getCreatedObjectsByTypeFromObjectChanges(

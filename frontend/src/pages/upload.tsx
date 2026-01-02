@@ -26,12 +26,31 @@ import {
 } from "@mysten/dapp-kit";
 import { MIST_PER_SUI, uploadVideoAssetsFlow } from "@/lib/sui";
 
+// ============================================================================
+// 上傳流程總覽
+//
+// 這個頁面負責前處理+上鏈/上傳整段流程
+// 1) 使用 FFmpeg.wasm 將 mp4 切成 HLS 的 .ts 片段並產生封面
+// 2) 使用 WebCrypto 產生 AES-128 金鑰，逐段加密
+// 3) 將加密後的片段串接成單一檔案（video.bin），並產生 BYTERANGE m3u8
+// 4) 走 uploadVideoAssetsFlow：Walrus register → upload-relay 上傳 → certify
+//
+// - UI 輸入的價格單位是 SUI；鏈上與交易使用的是 MIST（1 SUI = 1e9 MIST）。
+// - 上傳流程會觸發多次錢包簽名：至少 1 次 registerTx，外加每個 blob 1 次 tipTx + 最後 1 次 certifyTx。
+// - 因為 upload-relay tip 認 txid 無法 ptb 打包
+// ============================================================================
+
 export function UploadPage() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
 
-  // 多種頁面狀態
+  // 頁面狀態
+  // - waiting / videoSelected：選檔階段
+  // - videoProcessing：本機前處理（FFmpeg + 加密 + 產 m3u8）
+  // - videoProcessSuccess / videoProcessError：前處理成功/失敗
+  // - uploadingWalrus：開始走 Walrus/Sui 上傳註冊
+  // - walrusUploadSuccess / walrusUploadError：上傳成功/失敗
   const [pageStatus, setPageStatus] = useState<
     | "waiting"
     | "videoSelected"
@@ -77,7 +96,7 @@ export function UploadPage() {
     setPageStatus("videoProcessing");
     setVideoProcessingText("Loading processor...");
     setErrorMessage("");
-    // load ffmpeg.wasm
+    // 載入 FFmpeg.wasm
     const { ffmpeg } = await ffmpegInstance().catch((err) => {
       console.error("FFmpeg load error:", err);
       setPageStatus("videoProcessError");
@@ -86,7 +105,7 @@ export function UploadPage() {
     });
     setVideoProcessingProgress(5);
     setVideoProcessingText("Converter Ready");
-    // 重新編碼並切割為 特定秒一片段之 .ts 檔案
+    // 重新編碼/切割成 HLS 片段
     setVideoProcessingText("Transcoding & Splitting Video...");
     const { segments, coverFile } = await reEncodingSplitVideo(
       ffmpeg,
@@ -104,7 +123,7 @@ export function UploadPage() {
     setVideoProcessingProgress(40);
     setVideoProcessingText("Video processed");
     setVideoCoverFile(coverFile);
-    // 產生一 AES-128 加密金鑰逐一加密每個 .ts 檔案
+    // 產生 AES-128 金鑰，逐一加密每個 .ts 片段
     setVideoProcessingText("Encrypting Segments...");
     const encryptedData = await aesEncryptSegments(
       segments,
@@ -119,7 +138,7 @@ export function UploadPage() {
     setAesKey(encryptedData.key);
     setVideoProcessingProgress(90);
     setVideoProcessingText("Segments encrypted");
-    // 將所有 .ts 片段逐一接合同時紀錄每個片段 ByteRange
+    // 將所有片段串接成單一檔（video.bin），並產生 BYTERANGE m3u8
     setVideoProcessingText("Generating M3U8 Playlist...");
     const { m3u8Content, mergedData } = await mergeTSGenerateM3U8(
       encryptedData.segments,
@@ -302,6 +321,7 @@ export function UploadPage() {
 
                 setPageStatus("uploadingWalrus");
                 try {
+                  // 進入上鏈上傳流程：register → upload-relay → certify
                   await uploadVideoAssetsFlow(
                     {
                       video: mergedVideo,
@@ -312,7 +332,8 @@ export function UploadPage() {
                     {
                       title: videoTitle,
                       description: videoDescription,
-                      price: videoPrice * MIST_PER_SUI, // 轉為 MIST
+                      // 價格輸入是 SUI 交易轉 MIST
+                      price: videoPrice * MIST_PER_SUI,
                     },
                     currentAccount.address,
                     signAndExecuteTransaction,
