@@ -1,6 +1,7 @@
 import {
   getFullnodeUrl,
   SuiClient,
+  type SuiObjectResponse,
   type SuiTransactionBlockResponse,
   type SuiTransactionBlockResponseOptions,
 } from "@mysten/sui/client";
@@ -59,6 +60,24 @@ type EncodedWalrusBlob = {
   contentType?: string;
 };
 
+// dapp-kit 的 `useSignAndExecuteTransaction().mutateAsync` 回傳型別
+// 與 `@mysten/sui` 的 `SuiTransactionBlockResponse` 不完全相同（effects 型別不同）。
+// 但在本專案中，我們只需要它回傳 `digest` 來做 waitForTransaction。
+type SignAndExecuteTransactionFn = (input: {
+  transaction: Transaction;
+  options?: SuiTransactionBlockResponseOptions;
+}) => Promise<{ digest: string }>;
+
+function getMoveObjectFieldsFromSuiObject(
+  obj: SuiObjectResponse
+): Record<string, unknown> | null {
+  const content = obj.data?.content;
+  if (!content || typeof content !== "object") return null;
+  const fields = (content as { fields?: unknown }).fields;
+  if (!fields || typeof fields !== "object") return null;
+  return fields as Record<string, unknown>;
+}
+
 // ============================================================================
 // Walrus/Sui 上傳流程
 //
@@ -114,13 +133,12 @@ async function getCreatedWalrusBlobObjectIdByBlobId(
       options: { showContent: true },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const content = obj.data?.content as any;
-    const fields = content?.fields;
+    const fields = getMoveObjectFieldsFromSuiObject(obj);
+    if (!fields) continue;
 
     // Walrus 在鏈上把 blob_id 存成 u256
     // 但 SDK 產生的 blobId 是 base64url 字串
-    const onChainBlobId = fields?.blob_id ?? fields?.blobId;
+    const onChainBlobId = fields["blob_id"] ?? fields["blobId"];
     if (typeof onChainBlobId === "string") {
       try {
         if (BigInt(onChainBlobId) === expectedBlobIdU256) return objectId;
@@ -170,10 +188,9 @@ function isLikelyTimeoutError(err: unknown) {
   // AbortSignal.timeout 可能會產生 name TimeoutError 的 DOMException
   // Walrus SDK 目前只處理 name AbortError 的錯誤，因此這裡兩種都判斷
   if (!err || typeof err !== "object") return false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyErr = err as any;
-  const name = String(anyErr.name ?? "");
-  const message = String(anyErr.message ?? "");
+  const anyErr = err as { name?: unknown; message?: unknown };
+  const name = typeof anyErr.name === "string" ? anyErr.name : "";
+  const message = typeof anyErr.message === "string" ? anyErr.message : "";
   return (
     name === "TimeoutError" ||
     name === "AbortError" ||
@@ -238,11 +255,7 @@ export async function uploadVideoAssetsFlow(
   },
   metadata: { title: string; description: string; price: number },
   account: string,
-  signAndExecuteTransaction: (input: {
-    transaction: Transaction;
-    options?: SuiTransactionBlockResponseOptions;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  }) => Promise<any>,
+  signAndExecuteTransaction: SignAndExecuteTransactionFn,
   onStatusUpdate?: (status: string) => void
 ) {
   // =============================================================
@@ -423,7 +436,10 @@ export async function uploadVideoAssetsFlow(
   // 上傳 bytes（透過 upload relay）
   // - 會對每個 blob：先付 tip（產生 auth txDigest）→ 再呼叫 writeBlobToUploadRelay（HTTP）
   onStatusUpdate?.("Uploading blobs...");
-  const certificateByBlobId = new Map<string, unknown>();
+  type UploadRelayCertificate = Awaited<
+    ReturnType<typeof suiClient.walrus.writeBlobToUploadRelay>
+  >["certificate"];
+  const certificateByBlobId = new Map<string, UploadRelayCertificate>();
   const blobObjectIdByBlobId = new Map<string, string>();
   const tipTxDigestByBlobId = new Map<string, string>();
 
@@ -528,8 +544,7 @@ export async function uploadVideoAssetsFlow(
       blobId: blob.blobId,
       blobObjectId,
       deletable,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      certificate: certificate as any,
+      certificate,
     });
   }
 
@@ -575,11 +590,7 @@ export async function uploadVideoAssetsFlow(
 export async function buyVideo(
   video: { id: string; price: number },
   _account: string,
-  signAndExecuteTransaction: (input: {
-    transaction: Transaction;
-    options?: SuiTransactionBlockResponseOptions;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  }) => Promise<any>
+  signAndExecuteTransaction: SignAndExecuteTransactionFn
 ) {
   const tx = new Transaction();
 

@@ -14,8 +14,7 @@ import { toBlobURL } from "@ffmpeg/util";
 async function ffmpegInstance(): Promise<{ ffmpeg: FFmpeg }> {
   const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
   const ffmpeg = new FFmpeg();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ffmpeg.on("log", (e: any) => {
+  ffmpeg.on("log", (e) => {
     console.debug(e);
   });
 

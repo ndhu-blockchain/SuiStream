@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useParams } from "react-router-dom";
 import {
   useSuiClientQuery,
@@ -36,6 +35,59 @@ import {
   Film,
 } from "lucide-react";
 
+type MoveFields = Record<string, unknown>;
+
+function getMoveFieldsFromObjectResponse(
+  // dapp-kit / SuiClient 可能回傳 `data: null` 的 SuiObjectResponse
+  // 這裡用更寬鬆的 shape 來做 unknown-safe 解析。
+  obj: { data?: unknown } | null | undefined
+): MoveFields | null {
+  const data = obj?.data;
+  if (!data || typeof data !== "object") return null;
+  const content = (data as { content?: unknown }).content;
+  if (!content || typeof content !== "object") return null;
+  const fields = (content as { fields?: unknown }).fields;
+  if (!fields || typeof fields !== "object") return null;
+  return fields as MoveFields;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (!err) return "";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const maybe = err as { message?: unknown };
+    if (typeof maybe.message === "string") return maybe.message;
+  }
+  return String(err);
+}
+
+function getStringField(fields: MoveFields, key: string): string {
+  const value = fields[key];
+  if (typeof value === "string") return value;
+  throw new Error(`Missing/invalid field: ${key}`);
+}
+
+function getNumberField(fields: MoveFields, key: string): number {
+  const value = fields[key];
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  if (typeof value === "bigint") return Number(value);
+  throw new Error(`Missing/invalid number field: ${key}`);
+}
+
+function getU8VectorField(fields: MoveFields, key: string): Uint8Array {
+  const value = fields[key];
+  if (value instanceof Uint8Array) return value;
+  if (
+    Array.isArray(value) &&
+    value.every((n) => typeof n === "number" && Number.isInteger(n))
+  ) {
+    return new Uint8Array(value);
+  }
+  throw new Error(`Missing/invalid vector<u8> field: ${key}`);
+}
+
 // 實作一個簡單的 PublicKey Adapter
 class SimplePublicKey extends PublicKey {
   private rawBytes: Uint8Array;
@@ -58,12 +110,12 @@ class SimplePublicKey extends PublicKey {
   }
 
   async verify(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _data: Uint8Array,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _signature: Uint8Array | string
   ): Promise<boolean> {
     // 不實作驗證 Seal SDK 只是要拿 Public Key
+    void _data;
+    void _signature;
     return true;
   }
 
@@ -112,10 +164,10 @@ export default function VideoPlayerPage() {
   useEffect(() => {
     if (!decryptedKey || !videoObject || !videoRef.current) return;
 
-    const content = videoObject.data?.content as any;
-    const fields = content.fields;
-    const m3u8BlobId = fields.m3u8_blob_id;
-    const videoBlobId = fields.video_blob_id;
+    const fields = getMoveFieldsFromObjectResponse(videoObject);
+    if (!fields) return;
+    const m3u8BlobId = getStringField(fields, "m3u8_blob_id");
+    const videoBlobId = getStringField(fields, "video_blob_id");
 
     const initPlayer = async () => {
       if (Hls.isSupported()) {
@@ -129,48 +181,98 @@ export default function VideoPlayerPage() {
 
           const hls = new Hls({
             enableWorker: false,
-            loader: class CustomLoader extends Hls.DefaultConfig.loader {
-              constructor(config: any) {
+            loader: class CustomLoader extends (Hls.DefaultConfig
+              .loader as unknown as {
+              new (config: unknown): { load: (...args: unknown[]) => void };
+            }) {
+              constructor(config: unknown) {
                 super(config);
-                const load = this.load.bind(this);
+                const load = this.load.bind(this) as (
+                  context: unknown,
+                  config: unknown,
+                  callbacks: unknown
+                ) => void;
+
+                // hls.js 內部在處理 AES-128 key 時，會從 `context.decryptdata` 讀寫資料。
+                // 因此我們攔截 key request 時，必須把「原本的 context」原封不動傳回去。
+                type LoaderContext = Record<string, unknown> & {
+                  url?: unknown;
+                  decryptdata?: unknown;
+                };
+                type LoaderStats = Record<string, unknown> & { url: string };
+                type LoaderCallbacks = {
+                  onSuccess: (
+                    response: { data: ArrayBuffer; url: string },
+                    stats: LoaderStats,
+                    context: LoaderContext,
+                    networkDetails?: unknown
+                  ) => void;
+                  onError: (
+                    error: Error,
+                    context: LoaderContext,
+                    networkDetails: unknown,
+                    stats?: LoaderStats
+                  ) => void;
+                };
+
                 this.load = async (
-                  context: any,
-                  config: any,
-                  callbacks: any
+                  context: unknown,
+                  config: unknown,
+                  callbacks: unknown
                 ) => {
+                  const isObjectContext =
+                    !!context && typeof context === "object";
+                  const ctx: LoaderContext = isObjectContext
+                    ? (context as LoaderContext)
+                    : {};
+
+                  const url = typeof ctx.url === "string" ? ctx.url : "";
+                  const cb = callbacks as Partial<LoaderCallbacks>;
+
                   // 攔截 Key 請求並回傳已解密的 Key
-                  if (context.url.includes("video.key")) {
+                  if (url.includes("video.key")) {
                     console.log("[CustomLoader] Intercepting key request");
                     if (decryptedKey) {
-                      callbacks.onSuccess(
-                        {
-                          data: decryptedKey.buffer,
-                          url: context.url,
-                        },
-                        { url: context.url },
-                        context
+                      // `Uint8Array.buffer` 在 TS 型別上可能是 ArrayBufferLike。
+                      // hls.js loader callback 期待的是 ArrayBuffer，因此這裡明確 copy 成 ArrayBuffer。
+                      const keyBytes = Uint8Array.from(decryptedKey);
+                      const data = keyBytes.buffer.slice(
+                        keyBytes.byteOffset,
+                        keyBytes.byteOffset + keyBytes.byteLength
                       );
+                      const now = performance.now();
+                      const stats: LoaderStats = {
+                        url,
+                        trequest: now,
+                        tfirst: now,
+                        tload: now,
+                        loaded: keyBytes.byteLength,
+                        total: keyBytes.byteLength,
+                      };
+
+                      // 關鍵：第三個參數必須是「原本的 context」，讓 hls.js 能讀到 decryptdata。
+                      cb.onSuccess?.({ data, url }, stats, ctx);
                     } else {
-                      callbacks.onError(
-                        new Error("Key not available"),
-                        context,
-                        context
-                      );
+                      cb.onError?.(new Error("Key not available"), ctx, null);
                     }
                     return;
                   }
 
                   // 攔截 video.bin 請求並重導向到 Walrus
-                  if (context.url.includes("video.bin")) {
+                  if (
+                    url.includes("video.bin") &&
+                    typeof ctx.url === "string"
+                  ) {
                     // console.log("[CustomLoader] Intercepting video.bin request");
-                    context.url = `${WALRUS_AGGREGATOR_URL}${videoBlobId}`;
+                    ctx.url = `${WALRUS_AGGREGATOR_URL}${videoBlobId}`;
                   }
 
                   // 其他請求 (m3u8, segments) 走預設載入邏輯
-                  load(context, config, callbacks);
+                  // 這裡把原本的 context 傳回去（我們只在 object context 上原地改 url）。
+                  load(isObjectContext ? context : ctx, config, callbacks);
                 };
               }
-            } as any,
+            } as unknown as typeof Hls.DefaultConfig.loader,
           });
 
           const blob = new Blob([m3u8Text], {
@@ -197,9 +299,9 @@ export default function VideoPlayerPage() {
 
   const handleBuy = async () => {
     if (!videoObject || !currentAccount) return;
-    const content = videoObject.data?.content as any;
-    const fields = content.fields;
-    const price = Number(fields.price);
+    const fields = getMoveFieldsFromObjectResponse(videoObject);
+    if (!fields) return;
+    const price = getNumberField(fields, "price");
 
     setIsBuying(true);
     try {
@@ -212,9 +314,9 @@ export default function VideoPlayerPage() {
       });
       toast.success("Purchase Successful!");
       await refetchOwnedObjects();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      toast.error("Purchase Failed: " + e.message);
+      toast.error("Purchase Failed: " + getErrorMessage(e));
     } finally {
       setIsBuying(false);
     }
@@ -227,10 +329,10 @@ export default function VideoPlayerPage() {
     setError("");
 
     try {
-      const content = videoObject.data?.content as any;
-      const fields = content.fields;
-      const keyBlobId = fields.key_blob_id;
-      const sealId = new Uint8Array(fields.seal_id);
+      const fields = getMoveFieldsFromObjectResponse(videoObject);
+      if (!fields) throw new Error("Missing video fields");
+      const keyBlobId = getStringField(fields, "key_blob_id");
+      const sealId = getU8VectorField(fields, "seal_id");
       console.log("Seal ID:", sealId);
       console.log("Seal ID (Hex):", toHex(sealId));
 
@@ -245,12 +347,12 @@ export default function VideoPlayerPage() {
       });
 
       const pass = accessPasses.data.find((p) => {
-        const content = p.data?.content as any;
-        return content.fields.video_id === id;
+        const pFields = getMoveFieldsFromObjectResponse(p);
+        return pFields?.["video_id"] === id;
       });
 
       // 如是創作者本人也算有權限
-      const isCreator = fields.creator === currentAccount.address;
+      const isCreator = fields["creator"] === currentAccount.address;
 
       if (!pass && !isCreator) {
         throw new Error("You don't have an Access Pass for this video.");
@@ -336,12 +438,15 @@ export default function VideoPlayerPage() {
         },
       };
 
+      type SessionKeyCreateArgs = Parameters<typeof SessionKey.create>[0];
+      type SessionKeySigner = SessionKeyCreateArgs["signer"];
+
       const sessionKey = await SessionKey.create({
         suiClient,
         packageId: VIDEO_PLATFORM_PACKAGE_ID,
         address: currentAccount.address,
         ttlMin: 10,
-        signer: signerAdapter as any,
+        signer: signerAdapter as unknown as SessionKeySigner,
       });
 
       setStatusText("Decrypting with Seal...");
@@ -356,9 +461,9 @@ export default function VideoPlayerPage() {
 
       setDecryptedKey(decrypted);
       console.log("Decrypted Key Success!", decrypted);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Decryption failed:", err);
-      setError(err.message || "Decryption failed");
+      setError(getErrorMessage(err) || "Decryption failed");
     } finally {
       setIsDecrypting(false);
       setStatusText("");
@@ -396,16 +501,37 @@ export default function VideoPlayerPage() {
     );
   }
 
-  const content = videoObject.data.content as any;
-  const fields = content.fields;
+  const fields = getMoveFieldsFromObjectResponse(videoObject);
+  if (!fields) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center">
+        <AlertCircle className="h-16 w-16 text-destructive/50" />
+        <h2 className="text-2xl font-bold">Video not found</h2>
+        <p className="text-muted-foreground">
+          The video you are looking for does not exist or has been removed.
+        </p>
+        <Button variant="outline" onClick={() => window.history.back()}>
+          Go Back
+        </Button>
+      </div>
+    );
+  }
+
+  const title = typeof fields["title"] === "string" ? fields["title"] : "";
+  const description =
+    typeof fields["description"] === "string" ? fields["description"] : "";
+  const creator =
+    typeof fields["creator"] === "string" ? fields["creator"] : "";
+  const coverBlobId =
+    typeof fields["cover_blob_id"] === "string" ? fields["cover_blob_id"] : "";
 
   // Check access
   const pass = ownedObjects?.data.find((p) => {
-    const content = p.data?.content as any;
-    return content.fields.video_id === id;
+    const pFields = getMoveFieldsFromObjectResponse(p);
+    return pFields?.["video_id"] === id;
   });
-  const isCreator = fields.creator === currentAccount?.address;
-  const isFree = Number(fields.price) === 0;
+  const isCreator = fields["creator"] === currentAccount?.address;
+  const isFree = getNumberField(fields, "price") === 0;
   const hasAccess = !!pass || isCreator;
 
   return (
@@ -507,8 +633,8 @@ export default function VideoPlayerPage() {
                 controls
                 className="h-full w-full"
                 poster={
-                  fields.cover_blob_id
-                    ? `${WALRUS_AGGREGATOR_URL}${fields.cover_blob_id}`
+                  coverBlobId
+                    ? `${WALRUS_AGGREGATOR_URL}${coverBlobId}`
                     : undefined
                 }
               />
@@ -521,7 +647,7 @@ export default function VideoPlayerPage() {
           <div className="space-y-6 lg:col-span-2">
             <div>
               <h1 className="wrap-break-word text-3xl font-bold leading-tight tracking-tighter md:text-4xl">
-                {fields.title}
+                {title}
               </h1>
               <div className="mt-4 flex items-center gap-3 text-muted-foreground">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary">
@@ -532,7 +658,9 @@ export default function VideoPlayerPage() {
                     Creator
                   </span>
                   <span className="text-sm font-mono">
-                    {fields.creator.slice(0, 6)}...{fields.creator.slice(-4)}
+                    {creator
+                      ? `${creator.slice(0, 6)}...${creator.slice(-4)}`
+                      : ""}
                     {isCreator && " (You)"}
                   </span>
                 </div>
@@ -543,7 +671,7 @@ export default function VideoPlayerPage() {
               <h3 className="text-xl font-semibold">Description</h3>
               <div className="prose prose-zinc max-w-none dark:prose-invert">
                 <p className="whitespace-pre-wrap wrap-break-word leading-relaxed text-muted-foreground">
-                  {fields.description || "No description provided."}
+                  {description || "No description provided."}
                 </p>
               </div>
             </div>

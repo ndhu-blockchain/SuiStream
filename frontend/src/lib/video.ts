@@ -164,8 +164,14 @@ async function reEncodingSplitVideo(
   console.debug("Temporary files cleaned up.");
 
   const coverData = await ffmpegInstance.readFile("cover.png");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coverFile = new File([coverData as any], "cover.png", {
+  // `ffmpeg.readFile()` 可能回傳帶有 ArrayBufferLike 的 Uint8Array view。
+  // 這會讓 TS 在 `new File([bytes])` 時抱怨 BlobPart 型別不相容。
+  // 這裡用 `Uint8Array.from()` materialize 成標準 ArrayBuffer-backed 的 Uint8Array。
+  const coverBytes =
+    typeof coverData === "string"
+      ? new TextEncoder().encode(coverData)
+      : Uint8Array.from(coverData);
+  const coverFile = new File([coverBytes], "cover.png", {
     type: "image/png",
   });
   ffmpegInstance.deleteFile("cover.png");

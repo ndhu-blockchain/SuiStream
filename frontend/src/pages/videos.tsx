@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,6 +21,44 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Loader2, Play, User, Tag, Film } from "lucide-react";
+
+type MoveFields = Record<string, unknown>;
+
+function getMoveFieldsFromObjectResponse(
+  obj: { data?: unknown } | null | undefined
+): MoveFields | null {
+  const data = obj?.data;
+  if (!data || typeof data !== "object") return null;
+  const content = (data as { content?: unknown }).content;
+  if (!content || typeof content !== "object") return null;
+  const fields = (content as { fields?: unknown }).fields;
+  if (!fields || typeof fields !== "object") return null;
+  return fields as MoveFields;
+}
+
+function getRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function getStringProp(
+  obj: Record<string, unknown>,
+  key: string
+): string | null {
+  const value = obj[key];
+  return typeof value === "string" ? value : null;
+}
+
+function getNumberProp(
+  obj: Record<string, unknown>,
+  key: string
+): number | null {
+  const value = obj[key];
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  if (typeof value === "bigint") return Number(value);
+  return null;
+}
 
 export default function VideosPage() {
   const currentAccount = useCurrentAccount();
@@ -75,14 +112,17 @@ export default function VideosPage() {
 
   // 整理已購買的 Video ID
   const purchasedVideoIds = new Set(
-    ownedObjects?.data.map((obj) => {
-      const content = obj.data?.content as any;
-      return content?.fields?.video_id;
-    })
+    (ownedObjects?.data ?? [])
+      .map((obj) => {
+        const fields = getMoveFieldsFromObjectResponse(obj);
+        return fields?.["video_id"];
+      })
+      .filter((id): id is string => typeof id === "string")
   );
 
-  const videoEvents = events?.data.filter((event: any) =>
-    event.type.includes("VideoCreated")
+  const videoEvents = (events?.data ?? []).filter(
+    (event) =>
+      typeof event?.type === "string" && event.type.includes("VideoCreated")
   );
 
   return (
@@ -97,18 +137,24 @@ export default function VideosPage() {
       </div>
       {videoEvents && videoEvents.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {videoEvents.map((event: any) => {
-            const parsedJson = event.parsedJson;
-            const videoId = parsedJson.id;
-            const title = parsedJson.title;
-            const price = parsedJson.price
-              ? Number(parsedJson.price) / MIST_PER_SUI
-              : 0; // MIST to SUI
-            const coverUrl = parsedJson.cover_blob_id
-              ? `${WALRUS_AGGREGATOR_URL}${parsedJson.cover_blob_id}`
+          {videoEvents.map((event) => {
+            const parsedJson = getRecord(event.parsedJson);
+            if (!parsedJson) return null;
+
+            const videoId = getStringProp(parsedJson, "id");
+            const title = getStringProp(parsedJson, "title") ?? "";
+            const creator = getStringProp(parsedJson, "creator") ?? "";
+            const priceMist = getNumberProp(parsedJson, "price") ?? 0;
+            const price = priceMist ? priceMist / MIST_PER_SUI : 0;
+
+            const coverBlobId = getStringProp(parsedJson, "cover_blob_id");
+            const coverUrl = coverBlobId
+              ? `${WALRUS_AGGREGATOR_URL}${coverBlobId}`
               : null;
 
-            const isCreator = currentAccount?.address === parsedJson.creator;
+            if (!videoId) return null;
+
+            const isCreator = currentAccount?.address === creator;
             const isPurchased = purchasedVideoIds.has(videoId);
             const isFree = price === 0;
             const hasAccess = isCreator || isPurchased || isFree;
@@ -150,8 +196,7 @@ export default function VideosPage() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <User className="h-3 w-3" />
                       <span className="truncate">
-                        {parsedJson.creator.slice(0, 6)}...
-                        {parsedJson.creator.slice(-4)}
+                        {creator.slice(0, 6)}...{creator.slice(-4)}
                         {isCreator && (
                           <span className="ml-1 font-medium text-primary">
                             (You)
@@ -186,7 +231,7 @@ export default function VideosPage() {
                         setBuyingId(videoId);
                         try {
                           const result = await buyVideo(
-                            { id: videoId, price: Number(parsedJson.price) },
+                            { id: videoId, price: priceMist },
                             currentAccount.address,
                             signAndExecuteTransaction
                           );
