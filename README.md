@@ -120,3 +120,31 @@ sui client ptb \
     ```bash
     pnpm dev
     ```
+
+---
+
+## 前端部署：Cloudflare Pages (GitHub Actions)
+
+此專案已加入 GitHub Actions workflow：只有推送到 `prod` 分支才會部署到 Cloudflare Pages；PR 只會跑 build 不會部署。
+
+### 1. Cloudflare Pages 建立專案
+
+到 Cloudflare Dashboard → Workers & Pages → Pages → Create project，建立一個 Pages 專案。
+
+- **Project name**：`suistream`（如果你用別的名字，請同步修改 workflow 的 `projectName`）
+
+### 2. 設定 GitHub Repo Secrets
+
+在 GitHub Repo → Settings → Secrets and variables → Actions → New repository secret，新增：
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Workflow 位置：[.github/workflows/cloudflare-pages.yml](.github/workflows/cloudflare-pages.yml)
+
+### 3. 部署方式
+
+- Push 到 `prod`：自動部署 Production
+- 開 PR：只跑 build（不部署）
+
+> 備註：如果你的主要開發分支是 `main`，可以用「合併 `main` → `prod`」作為上線流程；只有 `prod` 更新時才會觸發部署。
