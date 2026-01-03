@@ -23,6 +23,7 @@ import { bytesToDisplaySize } from "@/lib/conversion";
 import { Label } from "@/components/ui/label";
 import {
   useCurrentAccount,
+  useCurrentWallet,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { uploadVideoAssetsFlow } from "@/lib/sui";
@@ -62,6 +63,8 @@ function parseSuiToMist(input: string): bigint | null {
 
 export function UploadPage() {
   const currentAccount = useCurrentAccount();
+  const { isConnected: isWalletConnected } = useCurrentWallet();
+  const walletConnected = isWalletConnected && !!currentAccount;
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
   const navigate = useNavigate();
@@ -208,7 +211,7 @@ export function UploadPage() {
           <CardFooter>
             <Button
               className="w-full"
-              disabled={!videoFile}
+              disabled={!videoFile || !walletConnected}
               onClick={() => {
                 // 取得影片
                 if (!videoFile) return;
@@ -370,7 +373,7 @@ export function UploadPage() {
                 if (!aesKey) return;
                 if (!videoCoverFile) return;
                 if (!videoTitle) return;
-                if (!currentAccount) return;
+                if (!walletConnected || !currentAccount) return;
 
                 const priceMist = parseSuiToMist(videoPriceInput);
                 if (
@@ -378,9 +381,7 @@ export function UploadPage() {
                   priceMist < 0n ||
                   priceMist > U64_MAX
                 ) {
-                  setVideoPriceError(
-                    `Invalid price input: ${videoPriceInput}`
-                  );
+                  setVideoPriceError(`Invalid price input: ${videoPriceInput}`);
                   return;
                 }
 
@@ -420,7 +421,7 @@ export function UploadPage() {
                 !aesKey ||
                 !videoCoverFile ||
                 !videoTitle ||
-                !currentAccount ||
+                !walletConnected ||
                 !!videoPriceError
               }
             >

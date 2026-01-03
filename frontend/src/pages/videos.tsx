@@ -10,6 +10,7 @@ import {
   useSignAndExecuteTransaction,
   useSuiClientQuery,
 } from "@mysten/dapp-kit";
+import { useCurrentWallet } from "@mysten/dapp-kit";
 import {
   buyVideo,
   VIDEO_PLATFORM_PACKAGE_ID,
@@ -73,6 +74,7 @@ function getErrorMessage(err: unknown): string {
 
 export default function VideosPage() {
   const currentAccount = useCurrentAccount();
+  const { isConnected: isWalletConnected } = useCurrentWallet();
   const { mutateAsync: signAndExecuteTransaction } =
     useSignAndExecuteTransaction();
   const navigate = useNavigate();
@@ -146,7 +148,12 @@ export default function VideosPage() {
             Discover and watch decentralized content
           </p>
         </div>
-        <Button onClick={() => navigate("/upload")}>Upload</Button>
+        <Button
+          onClick={() => navigate("/upload")}
+          disabled={!isWalletConnected}
+        >
+          Upload
+        </Button>
       </div>
       {videoEvents && videoEvents.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">

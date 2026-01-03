@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   useSuiClientQuery,
   useCurrentAccount,
+  useCurrentWallet,
   useSignPersonalMessage,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
@@ -133,6 +134,7 @@ export default function VideoPlayerPage() {
   const id = searchParams.get("v") ?? "";
   const hasId = id.length > 0;
   const currentAccount = useCurrentAccount();
+  const { isConnected: isWalletConnected } = useCurrentWallet();
   const [decryptedKey, setDecryptedKey] = useState<Uint8Array | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [statusText, setStatusText] = useState("");
@@ -974,7 +976,7 @@ export default function VideoPlayerPage() {
                       <Button
                         size="lg"
                         onClick={handleBuy}
-                        disabled={isBuying}
+                        disabled={isBuying || !isWalletConnected}
                         className="w-full gap-2 text-lg font-semibold"
                         variant={isFree ? "default" : "secondary"}
                       >
