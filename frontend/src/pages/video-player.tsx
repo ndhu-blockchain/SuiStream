@@ -39,6 +39,7 @@ import {
   Coins,
   Film,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 type MoveFields = Record<string, unknown>;
 
@@ -1095,11 +1096,13 @@ export default function VideoPlayerPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Current</span>
                   <span className="text-sm font-mono">
-                    {walrusCurrentEpoch !== null
-                      ? walrusCurrentEpoch
-                      : walrusEpochInfoLoading
-                      ? "Loading..."
-                      : "unavailable"}
+                    {walrusCurrentEpoch !== null ? (
+                      walrusCurrentEpoch
+                    ) : walrusEpochInfoLoading ? (
+                      <Spinner className="h-4 w-4" />
+                    ) : (
+                      "unavailable"
+                    )}
                   </span>
                 </div>
                 <div className="space-y-2">
