@@ -2,6 +2,14 @@
 
 SuiStream 是一個基於 Sui 區塊鏈與 Walrus 去中心化儲存的影音串流平台。
 
+---
+
+此說明文件未保持最新狀態，應謹慎參考。
+
+This README is not kept up to date and should be use cautiously.
+
+---
+
 ## 前置需求
 
 - [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install)
