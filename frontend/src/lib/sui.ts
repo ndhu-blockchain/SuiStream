@@ -28,7 +28,7 @@ const WAL_COIN_TYPE =
 
 // 部屬合約 pkg id
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x3a7142c917aa9bb9af160b8b59b1a97704077cd4f0444c39899d3273b1436666";
+  "0xe6185ff03f3c0e5be4e2afe3c5561f32329b763d755f3548654dc98710688b8d";
 
 // Walrus Aggregator
 export const WALRUS_AGGREGATOR_URL =
