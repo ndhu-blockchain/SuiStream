@@ -28,7 +28,11 @@ const WAL_COIN_TYPE =
 
 // 部屬合約 pkg id
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0x178f6055d47fd6ffb826c4542887a807b69662c4d3ec1ea5531a6cd1e6efc9db";
+  "0xe3e6e48a80c9f0c6fce46a03d7c38068f3c6ffbbe2e7c0f8d4723fdf02d6221d";
+
+// 部屬合約 config 物件 id
+export const VIDEO_PLATFORM_CONFIG_ID =
+  "0x1e0d40cf286e7ba782b72f014369a7f2fa578f10eede39920a48e30aede61d4c";
 
 // Walrus Aggregator
 export const WALRUS_AGGREGATOR_URL =
@@ -226,6 +230,14 @@ export const sealClient = new SealClient({
   verifyKeyServers: false,
   timeout: 30000,
 });
+
+async function getPlatformConfigObjectId(): Promise<string> {
+  if (!VIDEO_PLATFORM_CONFIG_ID) {
+    throw new Error("Missing VIDEO_PLATFORM_CONFIG_ID");
+  }
+
+  return VIDEO_PLATFORM_CONFIG_ID;
+}
 
 // 使用 Seal 加密 AES Key
 async function encryptKeyWithSeal(aesKey: Uint8Array, sealId: Uint8Array) {
@@ -603,6 +615,8 @@ export async function buyVideo(
   _account: string,
   signAndExecuteTransaction: SignAndExecuteTransactionFn
 ) {
+  const configObjectId = await getPlatformConfigObjectId();
+
   const tx = new Transaction();
 
   // 切割支付金額
@@ -611,7 +625,7 @@ export async function buyVideo(
   // call buy_video
   tx.moveCall({
     target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::buy_video`,
-    arguments: [tx.object(video.id), payment],
+    arguments: [tx.object(configObjectId), tx.object(video.id), payment],
   });
 
   // 執行

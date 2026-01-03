@@ -367,12 +367,12 @@ export default function VideoPlayerPage() {
 
       if (isCreator) {
         tx.moveCall({
-          target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve`,
+          target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_creator`,
           arguments: [sealIdArg, tx.object(id!)],
         });
       } else {
         tx.moveCall({
-          target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_with_pass`,
+          target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_pass`,
           arguments: [
             sealIdArg,
             tx.object(id!),
