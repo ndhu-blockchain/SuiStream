@@ -651,4 +651,17 @@ export async function buyVideo(
   return result;
 }
 
+export async function waitForTransactionSuccess(digest: string) {
+  const res = await suiClient.waitForTransaction({
+    digest,
+    options: { showEffects: true },
+  });
+
+  const status = res.effects?.status?.status;
+  if (status === "success") return;
+
+  const error = res.effects?.status?.error;
+  throw new Error(error || "Transaction failed");
+}
+
 export { SUI_COIN_TYPE, MIST_PER_SUI };

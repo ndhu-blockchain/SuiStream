@@ -13,9 +13,9 @@ import {
 import {
   buyVideo,
   VIDEO_PLATFORM_PACKAGE_ID,
-  suiClient,
   MIST_PER_SUI,
   WALRUS_AGGREGATOR_URL,
+  waitForTransactionSuccess,
 } from "@/lib/sui";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -60,6 +60,17 @@ function getNumberProp(
   return null;
 }
 
+function getErrorMessage(err: unknown): string {
+  if (!err) return "";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const maybe = err as { message?: unknown };
+    if (typeof maybe.message === "string") return maybe.message;
+  }
+  return String(err);
+}
+
 export default function VideosPage() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecuteTransaction } =
@@ -98,6 +109,7 @@ export default function VideosPage() {
     );
 
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [isWaitingOnChain, setIsWaitingOnChain] = useState(false);
 
   if (isEventsPending) {
     return (
@@ -232,31 +244,61 @@ export default function VideosPage() {
                       onClick={async () => {
                         if (!currentAccount) return;
                         setBuyingId(videoId);
+                        setIsWaitingOnChain(false);
+                        let startedPromise = false;
                         try {
                           const result = await buyVideo(
                             { id: videoId, price: priceMist },
                             currentAccount.address,
                             signAndExecuteTransaction
                           );
-                          await suiClient.waitForTransaction({
-                            digest: result.digest,
+
+                          // 簽名送出後（拿到 digest）才開始 loading spinner / toast
+                          setIsWaitingOnChain(true);
+
+                          const p = (async () => {
+                            await waitForTransactionSuccess(result.digest);
+                            await refetchOwnedObjects();
+                          })();
+
+                          startedPromise = true;
+                          toast.promise(p, {
+                            loading: "Processing purchase...",
+                            success: "Purchase Successful!",
+                            error: (e) => ({
+                              message: `Purchase Failed: ${getErrorMessage(e)}`,
+                              duration: Infinity,
+                              closeButton: true,
+                            }),
                           });
-                          toast.success("Purchase Successful!");
-                          await refetchOwnedObjects();
+
+                          await p;
                         } catch (e) {
                           console.error(e);
-                          toast.error("Purchase Failed");
+                          // 如果已經進入 toast.promise 的等待階段，錯誤會由 promise toast 顯示
+                          if (!startedPromise) {
+                            toast.error(
+                              `Purchase Failed: ${getErrorMessage(e)}`,
+                              {
+                                duration: Infinity,
+                                closeButton: true,
+                              }
+                            );
+                          }
                         } finally {
                           setBuyingId(null);
+                          setIsWaitingOnChain(false);
                         }
                       }}
                       disabled={buyingId === videoId || !currentAccount}
                     >
-                      {buyingId === videoId ? (
+                      {buyingId === videoId && isWaitingOnChain ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Buying
+                          Processing
                         </>
+                      ) : buyingId === videoId ? (
+                        <>Confirm in wallet</>
                       ) : (
                         <>
                           <Tag className="mr-2 h-4 w-4" />

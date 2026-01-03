@@ -18,6 +18,7 @@ import {
   MIST_PER_SUI,
   WALRUS_AGGREGATOR_URL,
   sealClient,
+  waitForTransactionSuccess,
 } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
@@ -133,6 +134,7 @@ export default function VideoPlayerPage() {
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [isBuying, setIsBuying] = useState(false);
+  const [isWaitingOnChain, setIsWaitingOnChain] = useState(false);
   const [error, setError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -323,21 +325,47 @@ export default function VideoPlayerPage() {
     const price = getNumberField(fields, "price");
 
     setIsBuying(true);
+    setIsWaitingOnChain(false);
+    let startedPromise = false;
     try {
-      await buyVideo(
+      const result = await buyVideo(
         { id, price },
         currentAccount.address,
         signAndExecuteTransaction
-      ).then(async (result) => {
-        await suiClient.waitForTransaction({ digest: result.digest });
+      );
+
+      // 簽名送出後（拿到 digest）才開始 loading spinner / toast
+      setIsWaitingOnChain(true);
+
+      const p = (async () => {
+        await waitForTransactionSuccess(result.digest);
+        await refetchOwnedObjects();
+      })();
+
+      startedPromise = true;
+      toast.promise(p, {
+        loading: "Processing purchase...",
+        success: "Purchase Successful!",
+        error: (e) => ({
+          message: `Purchase Failed: ${getErrorMessage(e)}`,
+          duration: Infinity,
+          closeButton: true,
+        }),
       });
-      toast.success("Purchase Successful!");
-      await refetchOwnedObjects();
+
+      await p;
     } catch (e: unknown) {
       console.error(e);
-      toast.error("Purchase Failed: " + getErrorMessage(e));
+      // 如果已經進入 toast.promise 的等待階段，錯誤會由 promise toast 顯示
+      if (!startedPromise) {
+        toast.error(`Purchase Failed: ${getErrorMessage(e)}`, {
+          duration: Infinity,
+          closeButton: true,
+        });
+      }
     } finally {
       setIsBuying(false);
+      setIsWaitingOnChain(false);
     }
   };
 
@@ -628,11 +656,13 @@ export default function VideoPlayerPage() {
                         className="w-full gap-2 text-lg font-semibold"
                         variant={isFree ? "default" : "secondary"}
                       >
-                        {isBuying ? (
+                        {isBuying && isWaitingOnChain ? (
                           <>
                             <Loader2 className="h-5 w-5 animate-spin" />
                             Processing...
                           </>
+                        ) : isBuying ? (
+                          <>Confirm in wallet</>
                         ) : isFree ? (
                           "Get Free Access"
                         ) : (
