@@ -179,18 +179,42 @@ export default function VideoPlayerPage() {
     const m3u8BlobId = getStringField(fields, "m3u8_blob_id");
     const videoBlobId = getStringField(fields, "video_blob_id");
 
+    let hls: Hls | null = null;
+    let manifestUrl: string | null = null;
+    let didCancel = false;
+
     const initPlayer = async () => {
       if (Hls.isSupported()) {
         // 取 M3U8
         const m3u8Url = `${WALRUS_AGGREGATOR_URL}${m3u8BlobId}`;
         try {
-          const response = await fetch(m3u8Url);
+          const response = await fetch(m3u8Url, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          });
           if (!response.ok) throw new Error("Failed to fetch m3u8");
           const m3u8Text = await response.text();
           console.log("Fetched M3U8:", m3u8Text);
 
-          const hls = new Hls({
+          hls = new Hls({
             enableWorker: false,
+            xhrSetup: (xhr) => {
+              // 盡量模擬 DevTools 的 Disable cache 行為：避免瀏覽器/中間層重用 206 partial
+              // （Walrus aggregator 不接受 query-based cache busting）
+              try {
+                xhr.setRequestHeader(
+                  "Cache-Control",
+                  "no-store, no-cache, must-revalidate, max-age=0"
+                );
+                xhr.setRequestHeader("Pragma", "no-cache");
+                xhr.setRequestHeader("If-Modified-Since", "0");
+              } catch {
+                // 某些情況下可能已送出 request 或 header 被鎖定，忽略即可
+              }
+            },
             loader: class CustomLoader extends (Hls.DefaultConfig
               .loader as unknown as {
               new (config: unknown): { load: (...args: unknown[]) => void };
@@ -208,6 +232,9 @@ export default function VideoPlayerPage() {
                 type LoaderContext = Record<string, unknown> & {
                   url?: unknown;
                   decryptdata?: unknown;
+                  rangeStart?: unknown;
+                  rangeEnd?: unknown;
+                  headers?: unknown;
                 };
                 type LoaderStats = Record<string, unknown> & { url: string };
                 type LoaderCallbacks = {
@@ -274,7 +301,23 @@ export default function VideoPlayerPage() {
                     typeof ctx.url === "string"
                   ) {
                     // console.log("[CustomLoader] Intercepting video.bin request");
-                    ctx.url = `${WALRUS_AGGREGATOR_URL}${videoBlobId}`;
+                    const baseUrl = `${WALRUS_AGGREGATOR_URL}${videoBlobId}`;
+
+                    // 注意：Walrus aggregator 可能會拒絕未知 query params（例如 ?range=...），
+                    // 因此這裡只改 host+path，不做 query-based cache busting。
+                    ctx.url = baseUrl;
+
+                    const prevHeaders =
+                      ctx.headers && typeof ctx.headers === "object"
+                        ? (ctx.headers as Record<string, string>)
+                        : {};
+                    ctx.headers = {
+                      ...prevHeaders,
+                      "Cache-Control":
+                        "no-store, no-cache, must-revalidate, max-age=0",
+                      Pragma: "no-cache",
+                      "If-Modified-Since": "0",
+                    };
                   }
 
                   // 其他請求 (m3u8, segments) 走預設載入邏輯
@@ -288,12 +331,14 @@ export default function VideoPlayerPage() {
           const blob = new Blob([m3u8Text], {
             type: "application/vnd.apple.mpegurl",
           });
-          const manifestUrl = URL.createObjectURL(blob);
+          manifestUrl = URL.createObjectURL(blob);
 
+          if (didCancel) return;
           hls.loadSource(manifestUrl);
           hls.attachMedia(videoRef.current!);
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (didCancel) return;
             videoRef.current
               ?.play()
               .catch((e) => console.error("Auto-play failed", e));
@@ -305,6 +350,18 @@ export default function VideoPlayerPage() {
     };
 
     initPlayer();
+
+    return () => {
+      didCancel = true;
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      if (manifestUrl) {
+        URL.revokeObjectURL(manifestUrl);
+        manifestUrl = null;
+      }
+    };
   }, [decryptedKey, videoObject]);
 
   if (!hasId) {
@@ -450,7 +507,13 @@ export default function VideoPlayerPage() {
       setStatusText("Fetching Encrypted Key from Walrus...");
       console.log("Fetching Encrypted Key from Walrus...", keyBlobId);
       // 取加密的 Key
-      const response = await fetch(`${WALRUS_AGGREGATOR_URL}${keyBlobId}`);
+      const response = await fetch(`${WALRUS_AGGREGATOR_URL}${keyBlobId}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
       if (!response.ok) throw new Error("Failed to fetch key from Walrus");
       const encryptedKey = new Uint8Array(await response.arrayBuffer());
 
