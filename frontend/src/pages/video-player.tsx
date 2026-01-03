@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   useSuiClientQuery,
   useCurrentAccount,
@@ -125,7 +125,9 @@ class SimplePublicKey extends PublicKey {
 }
 
 export default function VideoPlayerPage() {
-  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const id = searchParams.get("v") ?? "";
+  const hasId = id.length > 0;
   const currentAccount = useCurrentAccount();
   const [decryptedKey, setDecryptedKey] = useState<Uint8Array | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -138,10 +140,16 @@ export default function VideoPlayerPage() {
     useSignAndExecuteTransaction();
 
   // 取影片 Metadata 鏈上
-  const { data: videoObject, isPending } = useSuiClientQuery("getObject", {
-    id: id!,
-    options: { showContent: true },
-  });
+  const { data: videoObject, isPending } = useSuiClientQuery(
+    "getObject",
+    {
+      id,
+      options: { showContent: true },
+    },
+    {
+      enabled: hasId,
+    }
+  );
 
   // 查使用者有的 AccessPass
   const { data: ownedObjects, refetch: refetchOwnedObjects } =
@@ -297,8 +305,19 @@ export default function VideoPlayerPage() {
     initPlayer();
   }, [decryptedKey, videoObject]);
 
+  if (!hasId) {
+    return (
+      <div className="flex h-[50vh] w-full items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg font-semibold">Missing video id</p>
+          <p className="text-muted-foreground">Use /watch?v=&lt;id&gt;</p>
+        </div>
+      </div>
+    );
+  }
+
   const handleBuy = async () => {
-    if (!videoObject || !currentAccount) return;
+    if (!id || !videoObject || !currentAccount) return;
     const fields = getMoveFieldsFromObjectResponse(videoObject);
     if (!fields) return;
     const price = getNumberField(fields, "price");
@@ -306,7 +325,7 @@ export default function VideoPlayerPage() {
     setIsBuying(true);
     try {
       await buyVideo(
-        { id: id!, price },
+        { id, price },
         currentAccount.address,
         signAndExecuteTransaction
       ).then(async (result) => {
@@ -323,7 +342,7 @@ export default function VideoPlayerPage() {
   };
 
   const handlePlay = async () => {
-    if (!videoObject || !currentAccount) return;
+    if (!id || !videoObject || !currentAccount) return;
     setIsDecrypting(true);
     setStatusText("Preparing...");
     setError("");
@@ -368,14 +387,14 @@ export default function VideoPlayerPage() {
       if (isCreator) {
         tx.moveCall({
           target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_creator`,
-          arguments: [sealIdArg, tx.object(id!)],
+          arguments: [sealIdArg, tx.object(id)],
         });
       } else {
         tx.moveCall({
           target: `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::seal_approve_pass`,
           arguments: [
             sealIdArg,
-            tx.object(id!),
+            tx.object(id),
             tx.object(pass!.data!.objectId),
           ],
         });

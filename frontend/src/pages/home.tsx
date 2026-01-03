@@ -15,7 +15,7 @@ export default function HomePage() {
       ) : (
         <div className="flex space-x-4">
           <Button>
-            <Link to="/videos">Videos</Link>
+            <Link to="/">Videos</Link>
           </Button>
           <Button>
             <Link to="/upload">Upload</Link>

@@ -134,6 +134,7 @@ export default function VideosPage() {
             Discover and watch decentralized content
           </p>
         </div>
+        <Button onClick={() => navigate("/upload")}>Upload</Button>
       </div>
       {videoEvents && videoEvents.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -210,7 +211,9 @@ export default function VideosPage() {
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => navigate(`/video/${videoId}`)}
+                    onClick={() =>
+                      navigate(`/watch?v=${encodeURIComponent(videoId)}`)
+                    }
                   >
                     <Play className="mr-2 h-4 w-4" />
                     Details

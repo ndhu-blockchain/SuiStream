@@ -443,7 +443,11 @@ export function UploadPage() {
           </h1>
           <p>Your video has been uploaded to Walrus and registered on Sui.</p>
           {uploadedVideoId ? (
-            <Button onClick={() => navigate(`/video/${uploadedVideoId}`)}>
+            <Button
+              onClick={() =>
+                navigate(`/watch?v=${encodeURIComponent(uploadedVideoId)}`)
+              }
+            >
               Go to Video
             </Button>
           ) : (
