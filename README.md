@@ -125,13 +125,15 @@ sui client ptb \
 
 ## 前端部署：Cloudflare Pages (GitHub Actions)
 
-此專案已加入 GitHub Actions workflow：只有推送到 `prod` 分支才會部署到 Cloudflare Pages；PR 只會跑 build 不會部署。
+此專案已加入 GitHub Actions workflow（使用 `wrangler` 進行 Pages Direct Upload）：只有推送到 `prod` 分支才會部署到 Cloudflare Pages；PR 只會跑 build 不會部署。
 
 ### 1. Cloudflare Pages 建立專案
 
 到 Cloudflare Dashboard → Workers & Pages → Pages → Create project，建立一個 Pages 專案。
 
-- **Project name**：`suistream`（如果你用別的名字，請同步修改 workflow 的 `projectName`）
+- **Project name**：`suistream`（如果你用別的名字，請同步修改 workflow 內 `suistream` 這個名稱）
+
+> 備註：Cloudflare UI 會把 Pages 整合在「Workers & Pages」裡；如果你不想在 UI 手動建專案，workflow 也會透過 `wrangler pages project create` 自動建立/確保專案存在。
 
 ### 2. 設定 GitHub Repo Secrets
 

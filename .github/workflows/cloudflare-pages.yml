@@ -38,12 +38,12 @@ jobs:
       - name: Build
         run: pnpm -C frontend build
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages (Wrangler)
         if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: suistream
-          directory: frontend/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: |
+            pages project create suistream --production-branch prod || true
+            pages deploy frontend/dist --project-name suistream --branch prod
