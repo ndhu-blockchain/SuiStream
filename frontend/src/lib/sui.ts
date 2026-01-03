@@ -264,7 +264,7 @@ export async function uploadVideoAssetsFlow(
     cover: File;
     aesKey: Uint8Array;
   },
-  metadata: { title: string; description: string; price: number },
+  metadata: { title: string; description: string; price: bigint },
   account: string,
   signAndExecuteTransaction: SignAndExecuteTransactionFn,
   onStatusUpdate?: (status: string) => void

@@ -25,7 +25,26 @@ import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
-import { MIST_PER_SUI, uploadVideoAssetsFlow } from "@/lib/sui";
+import { uploadVideoAssetsFlow } from "@/lib/sui";
+
+const U64_MAX = 18446744073709551615n;
+const MIST_PER_SUI_BIGINT = 1_000_000_000n;
+const MAX_PRICE_SUI = U64_MAX / MIST_PER_SUI_BIGINT;
+
+function parseSuiToMist(input: string): bigint | null {
+  const value = input.trim();
+  if (value === "") return 0n;
+
+  // 允許：123、123.、123.45（最多 9 位小數）
+  if (!/^\d+(\.\d{0,9})?$/.test(value)) return null;
+
+  const [wholePart, fracPartRaw] = value.split(".");
+  const fracPart = (fracPartRaw ?? "").padEnd(9, "0");
+
+  const whole = BigInt(wholePart || "0");
+  const frac = BigInt(fracPart || "0");
+  return whole * MIST_PER_SUI_BIGINT + frac;
+}
 
 // ============================================================================
 // 上傳流程總覽
@@ -75,7 +94,8 @@ export function UploadPage() {
   const [videoCoverFile, setVideoCoverFile] = useState<File | null>(null);
   const [videoTitle, setVideoTitle] = useState<string>("");
   const [videoDescription, setVideoDescription] = useState<string>("");
-  const [videoPrice, setVideoPrice] = useState<number>(0);
+  const [videoPriceInput, setVideoPriceInput] = useState<string>("0");
+  const [videoPriceError, setVideoPriceError] = useState<string>("");
   const [uploadStatusText, setUploadStatusText] = useState<string>("");
   const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
 
@@ -91,7 +111,8 @@ export function UploadPage() {
     setVideoCoverFile(null);
     setVideoTitle("");
     setVideoDescription("");
-    setVideoPrice(0);
+    setVideoPriceInput("0");
+    setVideoPriceError("");
     setUploadStatusText("");
     setUploadedVideoId(null);
   };
@@ -303,10 +324,38 @@ export function UploadPage() {
                 <Input
                   id="video-price"
                   type="number"
-                  value={videoPrice}
-                  onChange={(e) => setVideoPrice(Number(e.target.value))}
+                  inputMode="decimal"
+                  min={"0"}
+                  max={MAX_PRICE_SUI.toString()}
+                  step={"0.000000001"}
+                  value={videoPriceInput}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setVideoPriceInput(next);
+
+                    const mist = parseSuiToMist(next);
+                    if (mist === null) {
+                      setVideoPriceError("請輸入有效金額（最多 9 位小數）");
+                      return;
+                    }
+
+                    if (mist < 0n || mist > U64_MAX) {
+                      setVideoPriceError(
+                        `金額超出上限（最大 ${MAX_PRICE_SUI.toString()} SUI）`
+                      );
+                      return;
+                    }
+
+                    setVideoPriceError("");
+                  }}
                   placeholder="Enter video price in SUI"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Max: {MAX_PRICE_SUI.toString()} SUI (u64 limit)
+                </p>
+                {videoPriceError && (
+                  <p className="text-sm text-red-500">{videoPriceError}</p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -323,6 +372,18 @@ export function UploadPage() {
                 if (!videoTitle) return;
                 if (!currentAccount) return;
 
+                const priceMist = parseSuiToMist(videoPriceInput);
+                if (
+                  priceMist === null ||
+                  priceMist < 0n ||
+                  priceMist > U64_MAX
+                ) {
+                  setVideoPriceError(
+                    `金額超出上限（最大 ${MAX_PRICE_SUI.toString()} SUI）`
+                  );
+                  return;
+                }
+
                 setPageStatus("uploadingWalrus");
                 try {
                   // 進入上鏈上傳流程：register → upload-relay → certify
@@ -336,8 +397,8 @@ export function UploadPage() {
                     {
                       title: videoTitle,
                       description: videoDescription,
-                      // 價格輸入是 SUI 交易轉 MIST
-                      price: videoPrice * MIST_PER_SUI,
+                      // 價格輸入是 SUI；鏈上用 MIST（u64）。用 bigint 避免 number 精度/溢位。
+                      price: priceMist,
                     },
                     currentAccount.address,
                     signAndExecuteTransaction,
@@ -359,7 +420,8 @@ export function UploadPage() {
                 !aesKey ||
                 !videoCoverFile ||
                 !videoTitle ||
-                !currentAccount
+                !currentAccount ||
+                !!videoPriceError
               }
             >
               Upload to Walrus
