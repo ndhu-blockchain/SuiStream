@@ -133,8 +133,6 @@ sui client ptb \
 
 - **Project name**：`suistream`（如果你用別的名字，請同步修改 workflow 內 `suistream` 這個名稱）
 
-> 備註：Cloudflare UI 會把 Pages 整合在「Workers & Pages」裡；如果你不想在 UI 手動建專案，workflow 也會透過 `wrangler pages project create` 自動建立/確保專案存在。
-
 ### 2. 設定 GitHub Repo Secrets
 
 在 GitHub Repo → Settings → Secrets and variables → Actions → New repository secret，新增：
