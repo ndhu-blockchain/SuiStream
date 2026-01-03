@@ -335,13 +335,13 @@ export function UploadPage() {
 
                     const mist = parseSuiToMist(next);
                     if (mist === null) {
-                      setVideoPriceError("請輸入有效金額（最多 9 位小數）");
+                      setVideoPriceError("Please enter a valid amount");
                       return;
                     }
 
                     if (mist < 0n || mist > U64_MAX) {
                       setVideoPriceError(
-                        `金額超出上限（最大 ${MAX_PRICE_SUI.toString()} SUI）`
+                        `Amount exceeds limit (max ${MAX_PRICE_SUI.toString()} SUI)`
                       );
                       return;
                     }
@@ -379,7 +379,7 @@ export function UploadPage() {
                   priceMist > U64_MAX
                 ) {
                   setVideoPriceError(
-                    `金額超出上限（最大 ${MAX_PRICE_SUI.toString()} SUI）`
+                    `Invalid price input: ${videoPriceInput}`
                   );
                   return;
                 }
