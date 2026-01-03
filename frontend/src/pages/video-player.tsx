@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { useState, useEffect, useRef } from "react";
 import { SessionKey } from "@mysten/seal";
 import {
@@ -19,12 +20,14 @@ import {
   WALRUS_AGGREGATOR_URL,
   sealClient,
   waitForTransactionSuccess,
+  WALRUS_EPOCHS_MAX,
 } from "@/lib/sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { PublicKey } from "@mysten/sui/cryptography";
 import { toBase64, toHex } from "@mysten/sui/utils";
 import Hls from "hls.js";
 import { toast } from "sonner";
+import { blobIdToInt } from "@mysten/walrus";
 import {
   Loader2,
   Lock,
@@ -136,6 +139,27 @@ export default function VideoPlayerPage() {
   const [isBuying, setIsBuying] = useState(false);
   const [isWaitingOnChain, setIsWaitingOnChain] = useState(false);
   const [error, setError] = useState("");
+
+  type WalrusBlobEpochInfo = {
+    label: "video" | "m3u8" | "key" | "cover";
+    blobId: string;
+    startEpoch: number | null;
+    endEpoch: number | null;
+    remainingEpochs: number[] | null;
+    remainingCount: number | null;
+    totalCount: number | null;
+    percentRemaining: number | null; // 0..100 (used as progress %)
+    error: string | null;
+  };
+
+  const [walrusEpochInfoLoading, setWalrusEpochInfoLoading] = useState(false);
+  const [walrusEpochInfoError, setWalrusEpochInfoError] = useState<string>("");
+  const [walrusCurrentEpoch, setWalrusCurrentEpoch] = useState<number | null>(
+    null
+  );
+  const [walrusEpochInfo, setWalrusEpochInfo] = useState<
+    WalrusBlobEpochInfo[] | null
+  >(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const { mutateAsync: signAndExecuteTransaction } =
@@ -170,6 +194,244 @@ export default function VideoPlayerPage() {
     );
 
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
+
+  useEffect(() => {
+    if (!videoObject) return;
+
+    const fields = getMoveFieldsFromObjectResponse(videoObject);
+    if (!fields) return;
+
+    const creator =
+      typeof fields["creator"] === "string" ? fields["creator"] : "";
+    const videoBlobId =
+      typeof fields["video_blob_id"] === "string"
+        ? fields["video_blob_id"]
+        : "";
+    const m3u8BlobId =
+      typeof fields["m3u8_blob_id"] === "string" ? fields["m3u8_blob_id"] : "";
+    const keyBlobId =
+      typeof fields["key_blob_id"] === "string" ? fields["key_blob_id"] : "";
+    const coverBlobId =
+      typeof fields["cover_blob_id"] === "string"
+        ? fields["cover_blob_id"]
+        : "";
+
+    if (!creator || !videoBlobId || !m3u8BlobId || !keyBlobId || !coverBlobId) {
+      return;
+    }
+
+    let didCancel = false;
+
+    const toInfo = (
+      base: Pick<WalrusBlobEpochInfo, "label" | "blobId">
+    ): WalrusBlobEpochInfo => ({
+      label: base.label,
+      blobId: base.blobId,
+      startEpoch: null,
+      endEpoch: null,
+      remainingEpochs: null,
+      remainingCount: null,
+      totalCount: null,
+      percentRemaining: null,
+      error: null,
+    });
+
+    const run = async () => {
+      setWalrusEpochInfoLoading(true);
+      setWalrusEpochInfoError("");
+      setWalrusEpochInfo(null);
+      setWalrusCurrentEpoch(null);
+
+      try {
+        const stakingState = await suiClient.walrus.stakingState();
+        const currentEpoch = Number(
+          (stakingState as { epoch?: unknown }).epoch
+        );
+        if (!Number.isFinite(currentEpoch)) {
+          throw new Error("Failed to read Walrus current epoch");
+        }
+
+        const blobs: Array<Pick<WalrusBlobEpochInfo, "label" | "blobId">> = [
+          { label: "video", blobId: videoBlobId },
+          { label: "m3u8", blobId: m3u8BlobId },
+          { label: "key", blobId: keyBlobId },
+          { label: "cover", blobId: coverBlobId },
+        ];
+
+        const results = blobs.map(toInfo);
+
+        // 1) Fast path: verified status may expose endEpoch for permanent blobs.
+        await Promise.all(
+          results.map(async (r) => {
+            try {
+              const status = await suiClient.walrus.getVerifiedBlobStatus({
+                blobId: r.blobId,
+              });
+              if (status && typeof status === "object") {
+                const s = status as { type?: unknown; endEpoch?: unknown };
+                if (s.type === "permanent" && typeof s.endEpoch === "number") {
+                  r.endEpoch = s.endEpoch;
+                }
+              }
+            } catch {
+              // Ignore and fallback to event lookup.
+            }
+          })
+        );
+
+        // 2) Event fallback: BlobRegistered contains epoch + end_epoch.
+        const needEventLookup = results.some(
+          (r) => r.endEpoch === null || r.startEpoch === null
+        );
+
+        if (needEventLookup) {
+          const blobType = await suiClient.walrus.getBlobType();
+          const walrusPackageId = String(blobType).split("::")[0] ?? "";
+          const blobRegisteredType = walrusPackageId
+            ? `${walrusPackageId}::events::BlobRegistered`
+            : "";
+
+          if (!blobRegisteredType) {
+            throw new Error("Failed to determine Walrus package id");
+          }
+
+          const targetByInt = new Map<string, WalrusBlobEpochInfo>();
+          for (const r of results) {
+            targetByInt.set(String(blobIdToInt(r.blobId)), r);
+          }
+
+          let cursor: { txDigest: string; eventSeq: string } | null = null;
+          const limit = 50;
+          const maxPages = 12;
+
+          for (let page = 0; page < maxPages; page += 1) {
+            const res = await suiClient.queryEvents({
+              query: { Sender: creator },
+              cursor,
+              limit,
+              order: "descending",
+            });
+
+            for (const evt of res.data) {
+              if (evt.type !== blobRegisteredType) continue;
+              const parsed = evt.parsedJson as
+                | {
+                    blob_id?: unknown;
+                    end_epoch?: unknown;
+                    epoch?: unknown;
+                  }
+                | undefined;
+              if (!parsed) continue;
+
+              const blobIdValue = parsed.blob_id;
+              const endEpochValue = parsed.end_epoch;
+              const startEpochValue = parsed.epoch;
+
+              let onChainBlobId: bigint | null = null;
+              if (typeof blobIdValue === "string") {
+                try {
+                  onChainBlobId = BigInt(blobIdValue);
+                } catch {
+                  onChainBlobId = null;
+                }
+              } else if (typeof blobIdValue === "bigint") {
+                onChainBlobId = blobIdValue;
+              } else if (typeof blobIdValue === "number") {
+                onChainBlobId = BigInt(blobIdValue);
+              }
+              if (onChainBlobId === null) continue;
+
+              const target = targetByInt.get(String(onChainBlobId));
+              if (!target) continue;
+
+              if (target.startEpoch === null) {
+                if (typeof startEpochValue === "number") {
+                  target.startEpoch = startEpochValue;
+                } else if (typeof startEpochValue === "string") {
+                  const maybe = Number(startEpochValue);
+                  if (Number.isFinite(maybe)) target.startEpoch = maybe;
+                }
+              }
+
+              if (target.endEpoch === null) {
+                if (typeof endEpochValue === "number") {
+                  target.endEpoch = endEpochValue;
+                } else if (typeof endEpochValue === "string") {
+                  const maybe = Number(endEpochValue);
+                  if (Number.isFinite(maybe)) target.endEpoch = maybe;
+                }
+              }
+            }
+
+            const allResolved = results.every((r) => r.endEpoch !== null);
+            if (allResolved) break;
+            if (!res.hasNextPage || !res.nextCursor) break;
+            cursor = res.nextCursor;
+          }
+        }
+
+        // 3) Compute remaining epoch list + progress percent.
+        for (const r of results) {
+          if (r.endEpoch === null) {
+            r.error = "Unable to resolve Walrus end epoch";
+            continue;
+          }
+
+          const endEpochNumber = Number(r.endEpoch);
+          if (!Number.isFinite(endEpochNumber)) {
+            r.error = "Invalid Walrus end epoch";
+            continue;
+          }
+
+          const startEpochNumber =
+            r.startEpoch !== null && Number.isFinite(Number(r.startEpoch))
+              ? Number(r.startEpoch)
+              : null;
+
+          const remaining: number[] = [];
+          if (endEpochNumber > currentEpoch) {
+            for (let e = currentEpoch; e < endEpochNumber; e += 1) {
+              remaining.push(e);
+            }
+          }
+
+          r.remainingEpochs = remaining;
+          r.remainingCount = Math.max(endEpochNumber - currentEpoch, 0);
+
+          if (startEpochNumber !== null && endEpochNumber > startEpochNumber) {
+            r.totalCount = endEpochNumber - startEpochNumber;
+            // Progress semantics:
+            // - start = startEpoch
+            // - current = currentEpoch
+            // - max = endEpoch (exclusive)
+            const elapsed = currentEpoch - startEpochNumber;
+            const ratio = r.totalCount === 0 ? 0 : elapsed / r.totalCount;
+            r.percentRemaining = Math.max(0, Math.min(100, ratio * 100));
+            r.startEpoch = startEpochNumber;
+          } else {
+            r.totalCount = null;
+            r.percentRemaining = null;
+            r.startEpoch = startEpochNumber;
+          }
+        }
+
+        if (didCancel) return;
+        setWalrusCurrentEpoch(currentEpoch);
+        setWalrusEpochInfo(results);
+      } catch (e) {
+        if (didCancel) return;
+        setWalrusEpochInfoError(getErrorMessage(e));
+      } finally {
+        if (didCancel) return;
+        setWalrusEpochInfoLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      didCancel = true;
+    };
+  }, [videoObject]);
 
   useEffect(() => {
     if (!decryptedKey || !videoObject || !videoRef.current) return;
@@ -823,6 +1085,61 @@ export default function VideoPlayerPage() {
                   <code className="block w-full break-all rounded bg-muted p-2 text-xs text-muted-foreground">
                     {id}
                   </code>
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <span className="text-sm font-medium">Epochs</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Current</span>
+                  <span className="text-sm font-mono">
+                    {walrusCurrentEpoch !== null
+                      ? walrusCurrentEpoch
+                      : walrusEpochInfoLoading
+                      ? "Loading..."
+                      : "unavailable"}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {walrusEpochInfoLoading ? (
+                    <Skeleton className="h-28 w-full" />
+                  ) : walrusEpochInfoError ? (
+                    <p className="text-xs text-muted-foreground">
+                      {walrusEpochInfoError}
+                    </p>
+                  ) : walrusEpochInfo && walrusCurrentEpoch !== null ? (
+                    <div className="space-y-4">
+                      {walrusEpochInfo.map((info) => (
+                        <div key={info.label} className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {info.label}
+                          </p>
+                          {info.percentRemaining !== null ? (
+                            <Progress value={info.percentRemaining} />
+                          ) : (
+                            <Progress value={0} className="opacity-40" />
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              {walrusCurrentEpoch}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {info.error ? "unavailable" : `${info.endEpoch}`}
+                              {info.remainingCount === WALRUS_EPOCHS_MAX
+                                ? "(Max)"
+                                : info.remainingCount !== null
+                                ? `(${info.remainingCount} epochs left)`
+                                : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      (unavailable)
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
