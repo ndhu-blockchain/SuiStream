@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ffmpegInstance } from "@/lib/ffmpeg";
@@ -360,6 +361,12 @@ export function UploadPage() {
                   <p className="text-sm text-red-500">{videoPriceError}</p>
                 )}
               </div>
+              <Alert>
+                <AlertTitle>Upload Notice</AlertTitle>
+                <AlertDescription>
+                  <p>Upload will require 6 wallet signatures!</p>
+                </AlertDescription>
+              </Alert>
             </div>
           </CardContent>
           <CardFooter className="flex justify-between">
@@ -433,6 +440,14 @@ export function UploadPage() {
       {pageStatus === "uploadingWalrus" && (
         <div className="flex flex-col items-center gap-4">
           <h1 className="text-2xl font-bold mb-4">Uploading to Walrus...</h1>
+          <div className="w-full max-w-md">
+            <Alert>
+              <AlertTitle>Upload Notice</AlertTitle>
+              <AlertDescription>
+                <p>Upload will require 6 wallet signatures!</p>
+              </AlertDescription>
+            </Alert>
+          </div>
           <p>{uploadStatusText || "Initializing upload..."}</p>
           <Spinner />
         </div>

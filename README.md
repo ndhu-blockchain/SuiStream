@@ -34,6 +34,17 @@ sui client publish --gas-budget 100000000 contracts/sui_stream
 部署完成後，請記錄：
 
 - **Package ID**: `Immutable` 物件的 ID。
+- **PlatformConfig ID**: `Shared` 物件的 ID (類型為 `...::video_platform::PlatformConfig`)。
+- **AdminCap ID**: `Owned` 物件的 ID (類型為 `...::video_platform::AdminCap`)。
+- **UpgradeCap ID**: `Owned` 物件的 ID (類型為 `0x2::package::UpgradeCap`)。
+
+目前 testnet 最新部署（2026-01-04）：
+
+- **Transaction Digest**: `Axo3FHnqjEfHnRvdtTu16wcWbXbyjnZkygxE2PBKvpmz`
+- **Package ID**: `0xe6185ff03f3c0e5be4e2afe3c5561f32329b763d755f3548654dc98710688b8d`
+- **PlatformConfig ID**: `0x28de5e4c18eee682d032984070d8bbf68762956a1821e0f87ab2d7058188383f`
+- **AdminCap ID**: `0x9419ffa45d2c8157103f3d93d0f5086723d302216feceb5ba705e3585ec9e706`
+- **UpgradeCap ID**: `0x008f15f6e689d68c33e49731905ef94b8a31337e7a64a5ae983784ccdbd0f7f2`
 
 ---
 
@@ -115,6 +126,8 @@ sui client ptb \
     - `MOCK_DEX_PACKAGE_ID`
     - `VIDEO_PLATFORM_PACKAGE_ID`
     - `MOCK_DEX_BANK_ID`
+
+    > 備註：目前 `VIDEO_PLATFORM_PACKAGE_ID` 已更新為 2026-01-04 testnet 最新部署的 Package ID；若你重新部署，請同步更新此值。
 
 4.  啟動開發伺服器：
     ```bash
