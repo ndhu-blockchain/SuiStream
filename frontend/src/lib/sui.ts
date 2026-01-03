@@ -28,11 +28,7 @@ const WAL_COIN_TYPE =
 
 // 部屬合約 pkg id
 export const VIDEO_PLATFORM_PACKAGE_ID =
-  "0xe3e6e48a80c9f0c6fce46a03d7c38068f3c6ffbbe2e7c0f8d4723fdf02d6221d";
-
-// 部屬合約 config 物件 id
-export const VIDEO_PLATFORM_CONFIG_ID =
-  "0x1e0d40cf286e7ba782b72f014369a7f2fa578f10eede39920a48e30aede61d4c";
+  "0x3a7142c917aa9bb9af160b8b59b1a97704077cd4f0444c39899d3273b1436666";
 
 // Walrus Aggregator
 export const WALRUS_AGGREGATOR_URL =
@@ -64,9 +60,9 @@ type EncodedWalrusBlob = {
   contentType?: string;
 };
 
-// dapp-kit 的 `useSignAndExecuteTransaction().mutateAsync` 回傳型別
-// 與 `@mysten/sui` 的 `SuiTransactionBlockResponse` 不完全相同（effects 型別不同）。
-// 但在本專案中，我們只需要它回傳 `digest` 來做 waitForTransaction。
+// dapp-kit 的 useSignAndExecuteTransaction().mutateAsync 回傳型別
+// 與 @mysten/sui 的 SuiTransactionBlockResponse effects 型別不同
+// 只需要它回傳 digest 做 waitForTransaction
 type SignAndExecuteTransactionFn = (input: {
   transaction: Transaction;
   options?: SuiTransactionBlockResponseOptions;
@@ -232,11 +228,29 @@ export const sealClient = new SealClient({
 });
 
 async function getPlatformConfigObjectId(): Promise<string> {
-  if (!VIDEO_PLATFORM_CONFIG_ID) {
-    throw new Error("Missing VIDEO_PLATFORM_CONFIG_ID");
+  const initEventType = `${VIDEO_PLATFORM_PACKAGE_ID}::video_platform::PlatformInitialized`;
+
+  const events = await suiClient.queryEvents({
+    query: { MoveEventType: initEventType },
+    limit: 1,
+    order: "descending",
+  });
+
+  const parsed = events.data?.[0]?.parsedJson as
+    | Record<string, unknown>
+    | undefined;
+
+  const configId =
+    (typeof parsed?.["config_id"] === "string" ? parsed["config_id"] : null) ??
+    (typeof parsed?.["configId"] === "string" ? parsed["configId"] : null);
+
+  if (!configId) {
+    throw new Error(
+      `PlatformInitialized event not found; cannot resolve PlatformConfig id (eventType=${initEventType}).`
+    );
   }
 
-  return VIDEO_PLATFORM_CONFIG_ID;
+  return configId;
 }
 
 // 使用 Seal 加密 AES Key

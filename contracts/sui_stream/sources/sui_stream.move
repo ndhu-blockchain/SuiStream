@@ -57,9 +57,18 @@ public struct VideoPurchased has copy, drop {
     buyer: address,
 }
 
+// 平台初始化事件
+public struct PlatformInitialized has copy, drop {
+    config_id: ID,
+    admin_cap_id: ID,
+    fee_address: address,
+    fee_percentage: u64,
+}
+
 fun init(ctx: &mut TxContext) {
     // 建立管理員鑰匙並交給部署者
     let admin_cap = AdminCap { id: object::new(ctx) };
+    let admin_cap_id = object::id(&admin_cap);
     transfer::public_transfer(admin_cap, ctx.sender());
 
     // 建立初始設定
@@ -68,7 +77,15 @@ fun init(ctx: &mut TxContext) {
         fee_address: ctx.sender(),
         fee_percentage: 5,
     };
+    let config_id = object::id(&config);
     transfer::share_object(config);
+
+    event::emit(PlatformInitialized {
+        config_id,
+        admin_cap_id,
+        fee_address: ctx.sender(),
+        fee_percentage: 5,
+    });
 }
 
 // AdminCap 可以更新平台設定（抽成地址）
