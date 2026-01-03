@@ -202,15 +202,14 @@ export default function VideoPlayerPage() {
           hls = new Hls({
             enableWorker: false,
             xhrSetup: (xhr) => {
-              // 盡量模擬 DevTools 的 Disable cache 行為：避免瀏覽器/中間層重用 206 partial
+              // 讓瀏覽器可以快取，但每次都必須 revalidate，避免錯誤重用 206 partial。
               // （Walrus aggregator 不接受 query-based cache busting）
               try {
                 xhr.setRequestHeader(
                   "Cache-Control",
-                  "no-store, no-cache, must-revalidate, max-age=0"
+                  "no-cache, must-revalidate, max-age=0"
                 );
                 xhr.setRequestHeader("Pragma", "no-cache");
-                xhr.setRequestHeader("If-Modified-Since", "0");
               } catch {
                 // 某些情況下可能已送出 request 或 header 被鎖定，忽略即可
               }
@@ -313,10 +312,8 @@ export default function VideoPlayerPage() {
                         : {};
                     ctx.headers = {
                       ...prevHeaders,
-                      "Cache-Control":
-                        "no-store, no-cache, must-revalidate, max-age=0",
+                      "Cache-Control": "no-cache, must-revalidate, max-age=0",
                       Pragma: "no-cache",
-                      "If-Modified-Since": "0",
                     };
                   }
 
