@@ -28,6 +28,7 @@ import {
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { uploadVideoAssetsFlow } from "@/lib/sui";
+import { Textarea } from "@/components/ui/textarea";
 
 const U64_MAX = 18446744073709551615n;
 const MIST_PER_SUI_BIGINT = 1_000_000_000n;
@@ -314,12 +315,12 @@ export function UploadPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="video-description">Video Description</Label>
-                <Input
+                <Textarea
                   id="video-description"
-                  type="text"
                   value={videoDescription}
                   onChange={(e) => setVideoDescription(e.target.value)}
                   placeholder="Enter video description"
+                  className="h-24"
                 />
               </div>
 
